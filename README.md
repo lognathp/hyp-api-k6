@@ -28,6 +28,7 @@ cd ../hyp-backend-api
 echo "env=load" >> .env
 mvn spring-boot:run
 
+<<<<<<< HEAD
 # 3. Start mock services (separate terminal)
 cd ../hyp-mock-services
 npm install && npm start
@@ -38,6 +39,13 @@ cd ../hyp-api-k6
 ./scripts/run-tests.sh smoke --restaurant 324672
 
 # 5. Run full lifecycle test
+=======
+# 3. Run smoke test to verify setup
+cd ../hyp-load-testing
+./scripts/run-tests.sh smoke --restaurant 324672
+
+# 4. Run full lifecycle test
+>>>>>>> fd997f0 (first-commit)
 ./scripts/run-tests.sh lifecycle --restaurant 324672
 ```
 
@@ -45,8 +53,14 @@ cd ../hyp-api-k6
 
 - **k6** - Load testing tool ([Installation](https://k6.io/docs/getting-started/installation/))
 - **HYP Backend API** - Running with `env=load` configuration
+<<<<<<< HEAD
 - **hyp-mock-services** - Mock gateway for external services ([../hyp-mock-services](../hyp-mock-services))
 - **Docker** (optional) - For running mock services in container
+=======
+- **MongoDB** - Separate database recommended for load testing
+- **Redis** - For OTP and caching
+- **Docker** (optional) - For mock services
+>>>>>>> fd997f0 (first-commit)
 
 ## Project Structure
 
@@ -68,9 +82,19 @@ hyp-load-testing/
 │       ├── order-lifecycle-test.js # Full backend lifecycle (15 min)
 │       ├── load-test.js            # Mixed traffic simulation (20 min)
 │       └── stress-test.js          # System breaking point (15 min)
+<<<<<<< HEAD
 ├── scripts/
 │   └── run-tests.sh           # Test runner script
 ├── configs/.env               # Environment configuration
+=======
+├── mock-services/
+│   └── pidge/                 # Mock delivery API
+├── scripts/
+│   └── run-tests.sh           # Test runner script
+├── configs/.env               # Environment configuration
+├── reports/                   # Test results (HTML, JSON)
+└── docker-compose.yml         # Mock services
+>>>>>>> fd997f0 (first-commit)
 ```
 
 ## Test Scenarios
@@ -354,6 +378,7 @@ spring.data.mongodb.database=hyp_load_test
 
 ## Mock Services
 
+<<<<<<< HEAD
 External service mocks for isolated load testing are provided by [hyp-mock-services](../hyp-mock-services).
 
 ### Available Mocks
@@ -363,10 +388,14 @@ External service mocks for isolated load testing are provided by [hyp-mock-servi
 | Pidge | `/mock/pidge` | Delivery partner API |
 | PetPooja | `/mock/petpooja` | POS integration API |
 | 2Factor SMS | `/mock/otp` | SMS/OTP gateway |
+=======
+External service mocks for isolated load testing.
+>>>>>>> fd997f0 (first-commit)
 
 ### Start Mock Services
 
 ```bash
+<<<<<<< HEAD
 # Option 1: npm
 cd ../hyp-mock-services
 npm install && npm start
@@ -392,6 +421,24 @@ pos.petpooja.url=http://localhost:8090/mock/petpooja
 
 # SMS/OTP mock (if applicable)
 sms.2factor.url=http://localhost:8090/mock/otp
+=======
+docker-compose up -d
+```
+
+### Available Mocks
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| Pidge (Delivery) | 8081 | Delivery quotes and order management |
+| Razorpay | 8082 | Payment processing (optional with env=load) |
+| OneSignal | 8083 | Push notifications |
+| Meta/WhatsApp | 8085 | WhatsApp messaging |
+
+### Configure Backend to Use Mocks
+
+```properties
+delivery.pidge.url=http://localhost:8081
+>>>>>>> fd997f0 (first-commit)
 ```
 
 ## Running Tests
