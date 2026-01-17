@@ -9,7 +9,7 @@
  * Duration: ~15 minutes
  * VUs: Ramping 0 → 100 → 200 → 300 → 500 → 500 → 0
  *
- * Usage: ./scripts/run-tests.sh stress --restaurant 324672
+ * Usage: ./run-tests.sh stress --restaurant 324672
  */
 
 import { sleep, group, check } from 'k6';

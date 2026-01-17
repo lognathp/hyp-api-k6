@@ -19,8 +19,8 @@
  * VUs: Configurable
  *
  * Usage:
- *   ./scripts/run-tests.sh lifecycle --restaurant 324672
- *   ./scripts/run-tests.sh lifecycle --restaurant 324672 --mode multi --orders 100
+ *   ./run-tests.sh lifecycle --restaurant 324672
+ *   ./run-tests.sh lifecycle --restaurant 324672 --mode multi --orders 100
  */
 
 import { sleep, group, check } from 'k6';

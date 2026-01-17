@@ -13,7 +13,7 @@
  * 7. Verify Order Delivered
  *
  * Usage:
- *   ./scripts/run-tests.sh single-order --restaurant 324672
+ *   ./run-tests.sh single-order --restaurant 324672
  */
 
 import { sleep, group, check } from 'k6';

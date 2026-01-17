@@ -14,7 +14,7 @@
  * Duration: ~10 minutes
  * VUs: Ramping 0 → 30 → 50 → 30 → 0
  *
- * Usage: ./scripts/run-tests.sh user-journey --restaurant 324672
+ * Usage: ./run-tests.sh user-journey --restaurant 324672
  */
 
 import { sleep, group, check } from 'k6';

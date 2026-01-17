@@ -10,7 +10,7 @@
  * Duration: ~5 minutes
  * VUs: Ramping 0 → 50 → 100 → 50 → 0
  *
- * Usage: ./scripts/run-tests.sh login-stress --restaurant 324672
+ * Usage: ./run-tests.sh login-stress --restaurant 324672
  */
 
 import { sleep, group, check } from 'k6';

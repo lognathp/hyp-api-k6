@@ -7,7 +7,7 @@
  * Duration: ~1 minute
  * VUs: 1
  *
- * Usage: ./scripts/run-tests.sh smoke --restaurant 324672
+ * Usage: ./run-tests.sh smoke --restaurant 324672
  */
 
 import { sleep, group, check } from 'k6';

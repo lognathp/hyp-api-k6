@@ -35,10 +35,10 @@ npm install && npm start
 
 # 4. Run smoke test to verify setup
 cd ../hyp-api-k6
-./scripts/run-tests.sh smoke --restaurant 324672
+./run-tests.sh smoke --restaurant 324672
 
 # 5. Run full lifecycle test
-./scripts/run-tests.sh lifecycle --restaurant 324672
+./run-tests.sh lifecycle --restaurant 324672
 ```
 
 ## Prerequisites
@@ -68,8 +68,7 @@ hyp-load-testing/
 │       ├── order-lifecycle-test.js # Full backend lifecycle (15 min)
 │       ├── load-test.js            # Mixed traffic simulation (20 min)
 │       └── stress-test.js          # System breaking point (15 min)
-├── scripts/
-│   └── run-tests.sh           # Test runner script
+├── run-tests.sh               # Test runner script
 ├── configs/.env               # Environment configuration
 ```
 
@@ -97,7 +96,7 @@ hyp-load-testing/
 Quick validation that all critical API endpoints are accessible and responding.
 
 ```bash
-./scripts/run-tests.sh smoke --restaurant 324672
+./run-tests.sh smoke --restaurant 324672
 ```
 
 **Endpoints tested:**
@@ -117,7 +116,7 @@ Quick validation that all critical API endpoints are accessible and responding.
 Stress test menu browsing operations under heavy load.
 
 ```bash
-./scripts/run-tests.sh menu-stress --restaurant 324672
+./run-tests.sh menu-stress --restaurant 324672
 ```
 
 **Operations:**
@@ -135,7 +134,7 @@ Stress test menu browsing operations under heavy load.
 Stress test the OTP-based authentication flow.
 
 ```bash
-./scripts/run-tests.sh login-stress --restaurant 324672
+./run-tests.sh login-stress --restaurant 324672
 ```
 
 **Flow:**
@@ -150,7 +149,7 @@ Stress test the OTP-based authentication flow.
 Stress test order creation with online payment.
 
 ```bash
-./scripts/run-tests.sh order-stress --restaurant 324672
+./run-tests.sh order-stress --restaurant 324672
 ```
 
 **Flow:**
@@ -168,7 +167,7 @@ Stress test order creation with online payment.
 Stress test order tracking and status checking.
 
 ```bash
-./scripts/run-tests.sh tracking-stress --restaurant 324672
+./run-tests.sh tracking-stress --restaurant 324672
 ```
 
 **Operations:**
@@ -187,7 +186,7 @@ Stress test order tracking and status checking.
 Complete user flow from browsing to payment (frontend perspective).
 
 ```bash
-./scripts/run-tests.sh user-journey --restaurant 324672
+./run-tests.sh user-journey --restaurant 324672
 ```
 
 **Flow:**
@@ -206,13 +205,13 @@ Complete order journey through all backend status transitions.
 
 ```bash
 # Single user mode (ramping VUs)
-./scripts/run-tests.sh lifecycle --restaurant 324672
+./run-tests.sh lifecycle --restaurant 324672
 
 # Multi-user mode: specific number of orders
-./scripts/run-tests.sh lifecycle --restaurant 324672 --mode multi --orders 100
+./run-tests.sh lifecycle --restaurant 324672 --mode multi --orders 100
 
 # Custom configuration
-./scripts/run-tests.sh lifecycle --restaurant 324672 --mode multi --users 500 --orders 500
+./run-tests.sh lifecycle --restaurant 324672 --mode multi --users 500 --orders 500
 ```
 
 **9-Phase Flow:**
@@ -240,7 +239,7 @@ OUT_FOR_DELIVERY → REACHED_DELIVERY → DELIVERED
 Simulates realistic production traffic with mixed operations.
 
 ```bash
-./scripts/run-tests.sh load --restaurant 324672
+./run-tests.sh load --restaurant 324672
 ```
 
 **Traffic Distribution:**
@@ -257,7 +256,7 @@ Simulates realistic production traffic with mixed operations.
 Push the system to find its breaking point.
 
 ```bash
-./scripts/run-tests.sh stress --restaurant 324672
+./run-tests.sh stress --restaurant 324672
 ```
 
 **Load Distribution:**
@@ -294,7 +293,7 @@ ORDER_COUNT=1000          # Number of orders to create
 ### Command Line Options
 
 ```bash
-./scripts/run-tests.sh <command> [options]
+./run-tests.sh <command> [options]
 
 Validation:
   smoke             Quick API health check (1 min)
@@ -400,33 +399,33 @@ sms.2factor.url=http://localhost:8090/mock/otp
 
 ```bash
 # 1. Validate API is working
-./scripts/run-tests.sh smoke --restaurant 324672
+./run-tests.sh smoke --restaurant 324672
 
 # 2. Test individual components
-./scripts/run-tests.sh menu-stress --restaurant 324672
-./scripts/run-tests.sh login-stress --restaurant 324672
-./scripts/run-tests.sh order-stress --restaurant 324672
-./scripts/run-tests.sh tracking-stress --restaurant 324672
+./run-tests.sh menu-stress --restaurant 324672
+./run-tests.sh login-stress --restaurant 324672
+./run-tests.sh order-stress --restaurant 324672
+./run-tests.sh tracking-stress --restaurant 324672
 
 # 3. Test complete flows
-./scripts/run-tests.sh user-journey --restaurant 324672
-./scripts/run-tests.sh lifecycle --restaurant 324672
+./run-tests.sh user-journey --restaurant 324672
+./run-tests.sh lifecycle --restaurant 324672
 
 # 4. Load testing
-./scripts/run-tests.sh load --restaurant 324672
+./run-tests.sh load --restaurant 324672
 
 # 5. Find limits
-./scripts/run-tests.sh stress --restaurant 324672
+./run-tests.sh stress --restaurant 324672
 ```
 
 ### Multi-User Load Testing
 
 ```bash
 # 100 orders through full lifecycle
-./scripts/run-tests.sh lifecycle --restaurant 324672 --mode multi --orders 100
+./run-tests.sh lifecycle --restaurant 324672 --mode multi --orders 100
 
 # 1000 users, 2000 orders
-./scripts/run-tests.sh lifecycle --restaurant 324672 --mode multi --users 1000 --orders 2000
+./run-tests.sh lifecycle --restaurant 324672 --mode multi --users 1000 --orders 2000
 ```
 
 ### Direct k6 Commands
@@ -525,8 +524,8 @@ reports/
 Use the `--dashboard` flag to open a real-time web dashboard:
 
 ```bash
-./scripts/run-tests.sh smoke --dashboard
-./scripts/run-tests.sh lifecycle --restaurant 324672 --dashboard
+./run-tests.sh smoke --dashboard
+./run-tests.sh lifecycle --restaurant 324672 --dashboard
 
 # Dashboard opens at http://localhost:5665
 ```
