@@ -52,7 +52,7 @@ cd ../hyp-api-k6
 
 ```
 hyp-load-testing/
-├── k6-tests/
+├── src/
 │   ├── config.js              # Configuration, endpoints, thresholds
 │   ├── utils/helpers.js       # API helper functions
 │   ├── data/
@@ -433,13 +433,13 @@ sms.2factor.url=http://localhost:8090/mock/otp
 
 ```bash
 # Run with environment variables
-k6 run k6-tests/scenarios/order-lifecycle-test.js \
+k6 run src/scenarios/order-lifecycle-test.js \
   --env RESTAURANT_ID=324672 \
   --env USER_MODE=multi \
   --env ORDER_COUNT=100
 
 # With web dashboard
-k6 run --out web-dashboard k6-tests/scenarios/order-lifecycle-test.js \
+k6 run --out web-dashboard src/scenarios/order-lifecycle-test.js \
   --env RESTAURANT_ID=324672
 ```
 
@@ -623,7 +623,7 @@ All tests use `/api/v2` endpoints:
 | Delivery | `/delivery/status/{orderId}` | GET | Get delivery status |
 | Delivery | `/delivery/rider-location/{orderId}` | GET | Get rider location |
 
-See `k6-tests/config.js` for the complete endpoint list.
+See `src/config.js` for the complete endpoint list.
 
 ## License
 
