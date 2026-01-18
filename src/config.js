@@ -6,7 +6,7 @@
 // Environment Configuration
 export const CONFIG = {
     // API Settings - v2 endpoints, no authentication
-    BASE_URL: __ENV.BASE_URL || 'http://localhost:8080/api/v2',
+    BASE_URL: __ENV.BASE_URL || 'http://212.38.94.145:30569/api/v2',
 
     // Test Data - Set these from environment or use defaults
     RESTAURANT_ID: __ENV.RESTAURANT_ID || '',
