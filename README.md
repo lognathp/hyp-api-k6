@@ -60,6 +60,7 @@ hyp-load-testing/
 │   │   └── dynamic-data.js    # Dynamic data fetching from API
 │   └── scenarios/
 │       ├── smoke-test.js           # Quick API validation (1 min)
+│       ├── single-order-test.js    # Single order lifecycle (debug)
 │       ├── menu-stress-test.js     # Menu browsing stress (5 min)
 │       ├── login-stress-test.js    # Login flow stress (5 min)
 │       ├── order-stress-test.js    # Order creation stress (5 min)
@@ -79,6 +80,7 @@ hyp-load-testing/
 | Category | Scenario | Command | Duration | VUs | Description |
 |----------|----------|---------|----------|-----|-------------|
 | **Validation** | Smoke | `smoke` | 1 min | 1 | Quick API health check |
+| **Validation** | Single Order | `single-order` | ~2 min | 1 | Single order lifecycle (debug/verify) |
 | **Stress** | Menu | `menu-stress` | 5 min | 0→200 | Menu browsing stress |
 | **Stress** | Login | `login-stress` | 5 min | 0→100 | Login flow stress |
 | **Stress** | Order | `order-stress` | 5 min | 0→100 | Order creation stress |
@@ -107,6 +109,20 @@ Quick validation that all critical API endpoints are accessible and responding.
 - Order list
 - Customer list
 - Delivery quote
+
+---
+
+#### Single Order Test
+Debug and verify the complete order lifecycle with a single user. Useful for validating the test setup before running larger load tests.
+
+```bash
+./run-tests.sh single-order --restaurant 324672
+```
+
+**Flow:**
+- Complete order lifecycle (login → order → payment → delivery)
+- Single VU for easy debugging
+- Validates all backend integrations
 
 ---
 
@@ -288,6 +304,9 @@ CUSTOMER_ID=100003
 USER_MODE=single          # single | multi
 USER_COUNT=1000           # Number of users in pool
 ORDER_COUNT=1000          # Number of orders to create
+
+# Grafana Cloud (optional)
+K6_CLOUD_TOKEN=           # Set to auto-publish results to Grafana Cloud
 ```
 
 ### Command Line Options
@@ -297,6 +316,7 @@ ORDER_COUNT=1000          # Number of orders to create
 
 Validation:
   smoke             Quick API health check (1 min)
+  single-order      Single order lifecycle (debug/verify)
 
 Stress Tests (Individual Components):
   menu-stress       Menu browsing stress test (5 min)
@@ -320,6 +340,7 @@ Options:
   --users N           Number of users in pool (default: 1000)
   --orders N          Number of orders to create (default: 1000)
   --dashboard         Open web dashboard at localhost:5665
+  --cloud TOKEN       Publish results to Grafana Cloud k6
 ```
 
 ## Backend Setup for Load Testing
