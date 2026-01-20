@@ -8,10 +8,13 @@
  * - Fetch variations
  * - View specific items
  *
- * Duration: ~5 minutes
- * VUs: Ramping 0 → 100 → 200 → 100 → 0
+ * Modes:
+ * - sanity: Single user, quick validation (~1 min)
+ * - load:   Multiple users, full stress test (~5 min)
  *
- * Usage: ./run-tests.sh menu-stress --restaurant 324672
+ * Usage:
+ *   ./run-tests.sh menu-stress --restaurant 324672 --mode sanity  # Quick validation
+ *   ./run-tests.sh menu-stress --restaurant 324672                # Full stress test
  */
 
 import { sleep, group, check } from 'k6';
@@ -28,20 +31,33 @@ const addonFetchTime = new Trend('addon_fetch_duration');
 const menuSuccessRate = new Rate('menu_success_rate');
 const menuRequests = new Counter('menu_requests');
 
+// Check if sanity mode
+const isSanityMode = CONFIG.USER_MODE === 'sanity';
+
+// Scenario configurations
+const sanityScenario = {
+    executor: 'per-vu-iterations',
+    vus: 1,
+    iterations: 5,  // Test each menu operation once
+    maxDuration: '2m',
+};
+
+const stressScenario = {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+        { duration: '30s', target: 50 },   // Ramp up
+        { duration: '1m', target: 75 },    // Increase
+        { duration: '1m', target: 90 },    // Peak load
+        { duration: '1m', target: 100 },   // Sustain peak
+        { duration: '1m', target: 90 },    // Scale down
+        { duration: '30s', target: 0 },    // Ramp down
+    ],
+};
+
 export const options = {
     scenarios: {
-        menu_stress: {
-            executor: 'ramping-vus',
-            startVUs: 0,
-            stages: [
-                { duration: '30s', target: 50 },   // Ramp up
-                { duration: '1m', target: 75 },   // Increase
-                { duration: '1m', target: 90 },   // Peak load
-                { duration: '1m', target: 100 },   // Sustain peak
-                { duration: '1m', target: 90 },   // Scale down
-                { duration: '30s', target: 0 },    // Ramp down
-            ],
-        },
+        menu_stress: isSanityMode ? sanityScenario : stressScenario,
     },
     thresholds: {
         ...THRESHOLDS,
@@ -176,12 +192,18 @@ function fetchVariations() {
 
 export function setup() {
     console.log('='.repeat(60));
-    console.log('MENU STRESS TEST - Heavy Menu Browsing');
+    console.log(`MENU STRESS TEST - ${isSanityMode ? 'SANITY MODE' : 'STRESS TEST'}`);
     console.log('='.repeat(60));
     console.log(`Target: ${CONFIG.BASE_URL}`);
     console.log(`Restaurant: ${CONFIG.RESTAURANT_ID || 'Not set (will skip full menu)'}`);
-    console.log('Load Pattern: 0 → 100 → 200 → 100 → 0 VUs');
-    console.log('Duration: ~5 minutes');
+    console.log(`Mode: ${isSanityMode ? 'sanity (single user validation)' : 'stress (multi-user)'}`);
+    if (isSanityMode) {
+        console.log('VUs: 1, Iterations: 5');
+        console.log('Duration: ~1 minute');
+    } else {
+        console.log('Load Pattern: 0 → 50 → 75 → 100 → 90 → 0 VUs');
+        console.log('Duration: ~5 minutes');
+    }
     console.log('='.repeat(60));
 
     // Verify API is accessible

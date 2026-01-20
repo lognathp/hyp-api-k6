@@ -8,10 +8,13 @@
  *
  * Requires existing orders in the system for realistic testing.
  *
- * Duration: ~5 minutes
- * VUs: Ramping 0 → 100 → 200 → 100 → 0
+ * Modes:
+ * - sanity: Single user, quick validation (~1 min)
+ * - load:   Multiple users, full stress test (~5 min)
  *
- * Usage: ./run-tests.sh tracking-stress --restaurant 324672
+ * Usage:
+ *   ./run-tests.sh tracking-stress --restaurant 324672 --mode sanity  # Quick validation
+ *   ./run-tests.sh tracking-stress --restaurant 324672                # Full stress test
  */
 
 import { sleep, group, check } from 'k6';
@@ -27,24 +30,37 @@ const orderTrackTime = new Trend('order_track_duration');
 const deliveryStatusTime = new Trend('delivery_status_duration');
 const trackingRequests = new Counter('tracking_requests');
 
+// Check if sanity mode
+const isSanityMode = CONFIG.USER_MODE === 'sanity';
+
 // Sample order IDs - these should be populated with real order IDs
 // In production, you would fetch these dynamically or pass via environment
 let sampleOrderIds = [];
 
+// Scenario configurations
+const sanityScenario = {
+    executor: 'per-vu-iterations',
+    vus: 1,
+    iterations: 4,  // Test each tracking operation once
+    maxDuration: '2m',
+};
+
+const stressScenario = {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+        { duration: '30s', target: 50 },   // Ramp up
+        { duration: '1m', target: 100 },   // Increase
+        { duration: '1m', target: 200 },   // Peak load
+        { duration: '1m', target: 200 },   // Sustain peak
+        { duration: '1m', target: 100 },   // Scale down
+        { duration: '30s', target: 0 },    // Ramp down
+    ],
+};
+
 export const options = {
     scenarios: {
-        tracking_stress: {
-            executor: 'ramping-vus',
-            startVUs: 0,
-            stages: [
-                { duration: '30s', target: 50 },   // Ramp up
-                { duration: '1m', target: 100 },   // Increase
-                { duration: '1m', target: 200 },   // Peak load
-                { duration: '1m', target: 200 },   // Sustain peak
-                { duration: '1m', target: 100 },   // Scale down
-                { duration: '30s', target: 0 },    // Ramp down
-            ],
-        },
+        tracking_stress: isSanityMode ? sanityScenario : stressScenario,
     },
     thresholds: {
         ...THRESHOLDS,
@@ -163,12 +179,18 @@ function getRiderLocation(orderId) {
 
 export function setup() {
     console.log('='.repeat(60));
-    console.log('TRACKING STRESS TEST - Order Status API Under Heavy Load');
+    console.log(`TRACKING STRESS TEST - ${isSanityMode ? 'SANITY MODE' : 'STRESS TEST'}`);
     console.log('='.repeat(60));
     console.log(`Target: ${CONFIG.BASE_URL}`);
     console.log(`Restaurant: ${CONFIG.RESTAURANT_ID || 'Not set'}`);
-    console.log('Load Pattern: 0 → 100 → 200 → 100 → 0 VUs');
-    console.log('Duration: ~5 minutes');
+    console.log(`Mode: ${isSanityMode ? 'sanity (single user validation)' : 'stress (multi-user)'}`);
+    if (isSanityMode) {
+        console.log('VUs: 1, Iterations: 4');
+        console.log('Duration: ~1 minute');
+    } else {
+        console.log('Load Pattern: 0 → 50 → 100 → 200 → 100 → 0 VUs');
+        console.log('Duration: ~5 minutes');
+    }
     console.log('='.repeat(60));
 
     // Fetch existing orders to track

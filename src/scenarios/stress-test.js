@@ -6,10 +6,13 @@
  * - All operations under heavy load
  * - Find breaking points and bottlenecks
  *
- * Duration: ~15 minutes
- * VUs: Ramping 0 → 100 → 200 → 300 → 500 → 500 → 0
+ * Modes:
+ * - sanity: Single user, quick validation (~2 min)
+ * - load:   Multiple users, full stress test (~15 min)
  *
- * Usage: ./run-tests.sh stress --restaurant 324672
+ * Usage:
+ *   ./run-tests.sh stress --restaurant 324672 --mode sanity  # Quick validation
+ *   ./run-tests.sh stress --restaurant 324672                # Full stress test
  */
 
 import { sleep, group, check } from 'k6';
@@ -45,24 +48,37 @@ const ordersAttempted = new Counter('orders_attempted');
 const ordersSucceeded = new Counter('orders_succeeded');
 const ordersFailed = new Counter('orders_failed');
 
+// Check if sanity mode
+const isSanityMode = CONFIG.USER_MODE === 'sanity';
+
 // User pool
-const userPool = generateUserPool(2000);
+const userPool = generateUserPool(isSanityMode ? 1 : 2000);
+
+// Scenario configurations
+const sanityScenario = {
+    executor: 'per-vu-iterations',
+    vus: 1,
+    iterations: 5,  // Test each stress operation once
+    maxDuration: '5m',
+};
+
+const stressScenario = {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+        { duration: '1m', target: 100 },   // Ramp to 100
+        { duration: '2m', target: 200 },   // Increase to 200
+        { duration: '2m', target: 300 },   // Increase to 300
+        { duration: '3m', target: 500 },   // Peak at 500
+        { duration: '3m', target: 500 },   // Sustain peak
+        { duration: '2m', target: 300 },   // Scale down
+        { duration: '2m', target: 0 },     // Ramp down
+    ],
+};
 
 export const options = {
     scenarios: {
-        stress_test: {
-            executor: 'ramping-vus',
-            startVUs: 0,
-            stages: [
-                { duration: '1m', target: 100 },   // Ramp to 100
-                { duration: '2m', target: 200 },   // Increase to 200
-                { duration: '2m', target: 300 },   // Increase to 300
-                { duration: '3m', target: 500 },   // Peak at 500
-                { duration: '3m', target: 500 },   // Sustain peak
-                { duration: '2m', target: 300 },   // Scale down
-                { duration: '2m', target: 0 },     // Ramp down
-            ],
-        },
+        stress_test: isSanityMode ? sanityScenario : stressScenario,
     },
     thresholds: {
         // Relaxed thresholds for stress test
@@ -318,10 +334,11 @@ function stressMixed() {
 
 export function setup() {
     console.log('='.repeat(60));
-    console.log('STRESS TEST - Finding System Breaking Point');
+    console.log(`STRESS TEST - ${isSanityMode ? 'SANITY MODE' : 'FINDING SYSTEM BREAKING POINT'}`);
     console.log('='.repeat(60));
     console.log(`Target: ${CONFIG.BASE_URL}`);
     console.log(`Restaurant: ${CONFIG.RESTAURANT_ID || 'NOT SET!'}`);
+    console.log(`Mode: ${isSanityMode ? 'sanity (single user validation)' : 'stress (multi-user)'}`);
     console.log('');
     console.log('Load Distribution:');
     console.log('  30% - Menu operations');
@@ -330,8 +347,13 @@ export function setup() {
     console.log('  15% - Order tracking');
     console.log('  10% - Mixed operations');
     console.log('');
-    console.log('Load Pattern: 0 → 100 → 200 → 300 → 500 → 500 → 0 VUs');
-    console.log('Duration: ~15 minutes');
+    if (isSanityMode) {
+        console.log('VUs: 1, Iterations: 5');
+        console.log('Duration: ~2 minutes');
+    } else {
+        console.log('Load Pattern: 0 → 100 → 200 → 300 → 500 → 500 → 0 VUs');
+        console.log('Duration: ~15 minutes');
+    }
     console.log('='.repeat(60));
 
     if (!CONFIG.RESTAURANT_ID) {
