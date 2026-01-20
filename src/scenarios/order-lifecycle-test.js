@@ -6,7 +6,7 @@
  * Flow:
  * 1. Browse Menu → View Items & Addons
  * 2. Login (OTP Request → Verify)
- * 3. Get Delivery Quote
+ * 3. Address & Delivery Quote (fetch/create customer address)
  * 4. Create Order
  * 5. Create Payment
  * 6. Verify Payment
@@ -15,11 +15,14 @@
  * 9. Delivery Callbacks: CREATED → OUT_FOR_PICKUP → PICKED_UP → OUT_FOR_DELIVERY → DELIVERED
  * 10. User Tracking (verify delivered)
  *
- * Duration: ~15 minutes (single mode) or configurable (multi mode)
- * VUs: Configurable
+ * Modes:
+ * - sanity: Single user, single order (~5 min) - for script validation
+ * - single: Ramping VUs load test (~15 min)
+ * - multi:  Shared iterations, configurable orders
  *
  * Usage:
- *   ./run-tests.sh lifecycle --restaurant 324672
+ *   ./run-tests.sh lifecycle --restaurant 324672 --mode sanity   # Quick validation
+ *   ./run-tests.sh lifecycle --restaurant 324672                 # Load test
  *   ./run-tests.sh lifecycle --restaurant 324672 --mode multi --orders 100
  */
 
@@ -39,8 +42,10 @@ import {
     ORDER_LIFECYCLE,
     DELIVERY_STATUS_SEQUENCE,
     fetchMenuData,
+    fetchRestaurantLocation,
     generateDynamicOrderDto,
     generateOrderDto,
+    generateAddressDto,
 } from '../data/test-data.js';
 
 // Custom metrics
@@ -64,32 +69,52 @@ const ordersCompleted = new Counter('orders_completed');
 const ordersDelivered = new Counter('orders_delivered');
 
 // Mode configuration
+const isSanityMode = CONFIG.USER_MODE === 'sanity';
 const isMultiUserMode = CONFIG.USER_MODE === 'multi';
-const userCount = CONFIG.USER_COUNT;
-const orderCount = CONFIG.ORDER_COUNT;
+const userCount = isSanityMode ? 1 : CONFIG.USER_COUNT;
+const orderCount = isSanityMode ? 1 : CONFIG.ORDER_COUNT;
 
 // Generate user pool
 const userPool = generateUserPool(userCount);
 
+// Scenario configurations
+const sanityScenario = {
+    executor: 'per-vu-iterations',
+    vus: 1,
+    iterations: 1,
+    maxDuration: '10m',
+};
+
+const multiScenario = {
+    executor: 'shared-iterations',
+    vus: Math.min(50, orderCount),
+    iterations: orderCount,
+    maxDuration: '60m',
+};
+
+const loadScenario = {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+        { duration: '1m', target: 10 },
+        { duration: '3m', target: 20 },
+        { duration: '5m', target: 30 },
+        { duration: '3m', target: 20 },
+        { duration: '2m', target: 10 },
+        { duration: '1m', target: 0 },
+    ],
+};
+
+// Select scenario based on mode
+function getScenario() {
+    if (isSanityMode) return sanityScenario;
+    if (isMultiUserMode) return multiScenario;
+    return loadScenario;
+}
+
 export const options = {
     scenarios: {
-        order_lifecycle: isMultiUserMode ? {
-            executor: 'shared-iterations',
-            vus: Math.min(50, orderCount),
-            iterations: orderCount,
-            maxDuration: '60m',
-        } : {
-            executor: 'ramping-vus',
-            startVUs: 0,
-            stages: [
-                { duration: '1m', target: 10 },
-                { duration: '3m', target: 20 },
-                { duration: '5m', target: 30 },
-                { duration: '3m', target: 20 },
-                { duration: '2m', target: 10 },
-                { duration: '1m', target: 0 },
-            ],
-        },
+        order_lifecycle: getScenario(),
     },
     thresholds: {
         ...THRESHOLDS,
@@ -106,6 +131,7 @@ export const options = {
 export default function (data) {
     const restaurantId = CONFIG.RESTAURANT_ID;
     const menuData = data?.menuData;
+    const restaurantLocation = data?.restaurantLocation;
     const user = getUserFromPool(userPool, __VU);
 
     const lifecycleStart = Date.now();
@@ -182,10 +208,52 @@ export default function (data) {
     sleep(randomSleep(200, 400));
 
     // ========================================
-    // PHASE 3: GET DELIVERY QUOTE
+    // PHASE 3: ADDRESS & DELIVERY QUOTE
     // ========================================
-    group('Phase 3: Delivery Quote', function () {
-        const res = apiGet(`${ENDPOINTS.DELIVERY_QUOTE(restaurantId)}?addressId=106335`);
+    let addressId = null;
+    group('Phase 3: Address & Delivery Quote', function () {
+        // Fetch customer addresses (200 = has addresses, 404 = no addresses - both are valid)
+        let res = apiGet(`${ENDPOINTS.ADDRESS_LIST}?customerId=${customerId}`);
+        check(res, { 'Address API responded': (r) => r.status === 200 || r.status === 404 });
+
+        // Parse addresses and get first available address (if any exist)
+        if (res.status === 200) {
+            try {
+                const body = JSON.parse(res.body);
+                const addresses = body.data || [];
+                if (addresses.length > 0) {
+                    const defaultAddr = addresses.find(a => a.isDefault);
+                    addressId = defaultAddr?.id || addresses[0]?.id || addresses[0]?._id;
+                }
+            } catch (e) {
+                console.warn(`Failed to parse addresses: ${e.message}`);
+            }
+        }
+
+        // If no address exists, create one for this customer
+        if (!addressId) {
+            console.log(`No address found for customer ${customerId}, creating one...`);
+            const addressPayload = generateAddressDto(customerId, restaurantLocation);
+            res = apiPost(ENDPOINTS.ADDRESS_CREATE, addressPayload);
+
+            if (res.status === 200) {
+                try {
+                    const body = JSON.parse(res.body);
+                    console.log(`Created address: ${body.data}`);
+                    addressId = body.data?.id || body.data?._id || body.data?.[0]?.id;
+                } catch (e) {
+                    console.warn(`Failed to parse created address: ${e.message}`);
+                }
+            }
+        }
+
+        if (!addressId) {
+            console.warn('No address available, using fallback');
+            addressId = '106335'; // Fallback to default
+        }
+
+        // Get delivery quote with customer's actual address
+        res = apiGet(`${ENDPOINTS.DELIVERY_QUOTE(restaurantId)}?addressId=${addressId}`);
         check(res, { 'Quote received': (r) => r.status === 200 || r.status === 404 });
     });
 
@@ -197,17 +265,17 @@ export default function (data) {
     group('Phase 4: Create Order', function () {
         const start = Date.now();
 
+        const orderOptions = {
+            paymentType: 'CREDIT',
+            orderType: '1',
+            addressId: addressId, // Use customer's actual address
+        };
+
         let orderPayload;
         if (menuData && menuData.items && menuData.items.length > 0) {
-            orderPayload = generateDynamicOrderDto(restaurantId, customerId, menuData, {
-                paymentType: 'CREDIT',
-                orderType: '1',
-            });
+            orderPayload = generateDynamicOrderDto(restaurantId, customerId, menuData, orderOptions);
         } else {
-            orderPayload = generateOrderDto(restaurantId, customerId, {
-                paymentType: 'CREDIT',
-                orderType: '1',
-            });
+            orderPayload = generateOrderDto(restaurantId, customerId, orderOptions);
         }
 
         const res = apiPost(ENDPOINTS.ORDER_CREATE, orderPayload);
@@ -406,18 +474,24 @@ export default function (data) {
 }
 
 export function setup() {
+    const modeLabel = isSanityMode ? 'SANITY MODE' : (isMultiUserMode ? 'MULTI USER' : 'LOAD TEST');
+
     console.log('='.repeat(70));
-    console.log('ORDER LIFECYCLE TEST - Complete Backend Flow');
+    console.log(`ORDER LIFECYCLE TEST - ${modeLabel}`);
     console.log('='.repeat(70));
     console.log(`Target: ${CONFIG.BASE_URL}`);
     console.log(`Restaurant: ${CONFIG.RESTAURANT_ID || 'NOT SET!'}`);
-    console.log(`Mode: ${isMultiUserMode ? 'MULTI USER' : 'SINGLE USER'}`);
-    if (isMultiUserMode) {
+    console.log(`Mode: ${modeLabel}`);
+    if (isSanityMode) {
+        console.log('VUs: 1 (single iteration for validation)');
+    } else if (isMultiUserMode) {
         console.log(`Users: ${userCount}, Orders: ${orderCount}`);
+    } else {
+        console.log('Load Pattern: 0 → 10 → 20 → 30 → 20 → 10 → 0 VUs');
     }
     console.log('');
     console.log('Flow:');
-    console.log('  1. Browse Menu → 2. Login → 3. Quote → 4. Create Order');
+    console.log('  1. Browse Menu → 2. Login → 3. Address & Quote → 4. Create Order');
     console.log('  5. Create Payment → 6. Verify Payment');
     console.log('  7. POS ACCEPTED → 8. READY_FOR_DELIVERY');
     console.log('  9. Delivery Callbacks (CREATED → OUT_FOR_PICKUP → PICKED_UP → OUT_FOR_DELIVERY → DELIVERED)');
@@ -428,6 +502,17 @@ export function setup() {
         throw new Error('RESTAURANT_ID is required!');
     }
 
+    // Fetch restaurant location for address creation
+    console.log('\nFetching restaurant location...');
+    const restaurantData = fetchRestaurantLocation(CONFIG.RESTAURANT_ID);
+    const restaurantLocation = restaurantData?.location || null;
+
+    if (restaurantLocation) {
+        console.log(`Restaurant location: lat=${restaurantLocation.latitude}, lng=${restaurantLocation.longitude}`);
+    } else {
+        console.warn('Could not fetch restaurant location, will use fallback');
+    }
+
     // Fetch menu data
     console.log('\nFetching menu data...');
     const menuData = fetchMenuData(CONFIG.RESTAURANT_ID);
@@ -436,7 +521,7 @@ export function setup() {
         console.log(`Loaded ${menuData.items?.length || 0} items`);
     }
 
-    return { startTime: Date.now(), menuData };
+    return { startTime: Date.now(), menuData, restaurantLocation };
 }
 
 export function teardown(data) {

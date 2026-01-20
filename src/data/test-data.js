@@ -19,6 +19,7 @@ import { SharedArray } from 'k6/data';
 export {
     fetchMenuData,
     fetchCustomerAddresses,
+    fetchRestaurantLocation,
     generateDynamicOrderDto,
     getRandomItems,
     validateMenuData,
@@ -143,6 +144,38 @@ export const SAMPLE_ITEMS = [
 // Use valid address IDs that exist for your test customer
 export const SAMPLE_ADDRESS_IDS = ['106335'];
 
+// Sample addresses for creating new addresses
+// Location will be set dynamically based on restaurant location
+export const SAMPLE_ADDRESSES = [
+    {
+        addressOne: '123 Test Street',
+        addressTwo: 'Sector 15',
+        city: 'Gurugram',
+        state: 'Haryana',
+        country: 'India',
+        pincode: '122001',
+        landmark: 'Near Test Mall',
+    },
+    {
+        addressOne: '456 Load Test Avenue',
+        addressTwo: 'DLF Phase 2',
+        city: 'Gurugram',
+        state: 'Haryana',
+        country: 'India',
+        pincode: '122002',
+        landmark: 'Opposite Test Tower',
+    },
+    {
+        addressOne: '789 Performance Road',
+        addressTwo: 'Cyber City',
+        city: 'Gurugram',
+        state: 'Haryana',
+        country: 'India',
+        pincode: '122018',
+        landmark: 'Near Cyber Hub',
+    },
+];
+
 /**
  * Generate OrderDto matching the actual API structure
  */
@@ -258,12 +291,22 @@ export function generateCustomerDto(restaurantId) {
 
 /**
  * Generate AddressDto matching the actual API structure
+ * @param {string} customerId - Customer ID
+ * @param {object} location - Restaurant location { latitude, longitude }
  */
-export function generateAddressDto(customerId) {
+export function generateAddressDto(customerId, location = null) {
     const address = SAMPLE_ADDRESSES[Math.floor(Math.random() * SAMPLE_ADDRESSES.length)];
+
+    // Use provided location (restaurant's location) or fallback
+    const addressLocation = location || {
+        latitude: 28.4595,
+        longitude: 77.0266,
+    };
+
     return {
         customerId: customerId,
         ...address,
+        location: addressLocation,
         addressType: 'HOME',
         isDefault: true,
     };

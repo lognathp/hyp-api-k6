@@ -128,10 +128,16 @@ Debug and verify the complete order lifecycle with a single user. Useful for val
 
 ### Stress Tests (Individual Components)
 
+> **All stress tests support `--mode sanity` for quick single-user validation before running full stress tests.**
+
 #### Menu Stress Test
 Stress test menu browsing operations under heavy load.
 
 ```bash
+# Sanity mode: Quick validation (~1 min)
+./run-tests.sh menu-stress --restaurant 324672 --mode sanity
+
+# Full stress test (~5 min)
 ./run-tests.sh menu-stress --restaurant 324672
 ```
 
@@ -142,14 +148,16 @@ Stress test menu browsing operations under heavy load.
 - Addon groups
 - Variations
 
-**Load Pattern:** 0 → 50 → 100 → 150 → 200 → 100 → 0 VUs
-
 ---
 
 #### Login Stress Test
 Stress test the OTP-based authentication flow.
 
 ```bash
+# Sanity mode: Quick validation (~1 min)
+./run-tests.sh login-stress --restaurant 324672 --mode sanity
+
+# Full stress test (~5 min)
 ./run-tests.sh login-stress --restaurant 324672
 ```
 
@@ -157,14 +165,16 @@ Stress test the OTP-based authentication flow.
 1. Request OTP (`POST /login/otp`)
 2. Verify OTP (`POST /login/verify-otp`)
 
-**Load Pattern:** 0 → 25 → 50 → 75 → 100 → 50 → 0 VUs
-
 ---
 
 #### Order Stress Test
 Stress test order creation with online payment.
 
 ```bash
+# Sanity mode: Quick validation (~2 min)
+./run-tests.sh order-stress --restaurant 324672 --mode sanity
+
+# Full stress test (~5 min)
 ./run-tests.sh order-stress --restaurant 324672
 ```
 
@@ -175,14 +185,16 @@ Stress test order creation with online payment.
 4. Create payment
 5. Verify payment
 
-**Load Pattern:** 0 → 25 → 50 → 75 → 100 → 50 → 0 VUs
-
 ---
 
 #### Tracking Stress Test
 Stress test order tracking and status checking.
 
 ```bash
+# Sanity mode: Quick validation (~1 min)
+./run-tests.sh tracking-stress --restaurant 324672 --mode sanity
+
+# Full stress test (~5 min)
 ./run-tests.sh tracking-stress --restaurant 324672
 ```
 
@@ -192,8 +204,6 @@ Stress test order tracking and status checking.
 - Get delivery status
 - Get rider location
 
-**Load Pattern:** 0 → 50 → 100 → 150 → 200 → 100 → 0 VUs
-
 ---
 
 ### Integration Tests
@@ -202,17 +212,23 @@ Stress test order tracking and status checking.
 Complete user flow from browsing to payment (frontend perspective).
 
 ```bash
+# Sanity mode: Quick validation with single user (~2 min)
+./run-tests.sh user-journey --restaurant 324672 --mode sanity
+
+# Load test: Multiple concurrent users (~10 min)
 ./run-tests.sh user-journey --restaurant 324672
 ```
 
 **Flow:**
 1. Browse Menu (categories, items, addons)
 2. Login (OTP flow)
-3. Address & Delivery Quote
+3. Address & Delivery Quote (fetches/creates customer address dynamically)
 4. Place Order
 5. Payment (create + verify)
 
-**Load Pattern:** 0 → 15 → 30 → 50 → 30 → 15 → 0 VUs
+**Modes:**
+- `sanity`: Single user, 1 iteration - validates script works before load testing
+- `load` (default): Ramping 0 → 15 → 30 → 50 → 30 → 15 → 0 VUs
 
 ---
 
@@ -220,7 +236,10 @@ Complete user flow from browsing to payment (frontend perspective).
 Complete order journey through all backend status transitions.
 
 ```bash
-# Single user mode (ramping VUs)
+# Sanity mode: Quick validation with single user (~5 min)
+./run-tests.sh lifecycle --restaurant 324672 --mode sanity
+
+# Load test mode (ramping VUs, ~15 min)
 ./run-tests.sh lifecycle --restaurant 324672
 
 # Multi-user mode: specific number of orders
@@ -230,16 +249,21 @@ Complete order journey through all backend status transitions.
 ./run-tests.sh lifecycle --restaurant 324672 --mode multi --users 500 --orders 500
 ```
 
-**9-Phase Flow:**
+**10-Phase Flow:**
 1. Browse Menu
 2. Login (OTP)
-3. Address & Quote
+3. Address & Quote (fetches/creates customer address dynamically)
 4. Create Order
 5. Payment (create + verify)
 6. POS Accept (status → ACCEPTED)
 7. Ready for Delivery
 8. Delivery (create → fulfill → all callbacks)
 9. User Tracking (verify DELIVERED)
+
+**Modes:**
+- `sanity`: Single user, 1 order - validates script works before load testing
+- `load` (default): Ramping 0 → 10 → 20 → 30 → 20 → 10 → 0 VUs
+- `multi`: Shared iterations with configurable user/order counts
 
 **Delivery Callbacks:**
 ```
@@ -251,10 +275,16 @@ OUT_FOR_DELIVERY → REACHED_DELIVERY → DELIVERED
 
 ### Load Tests
 
+> **All load tests support `--mode sanity` for quick single-user validation before running full load tests.**
+
 #### Mixed Load Test
 Simulates realistic production traffic with mixed operations.
 
 ```bash
+# Sanity mode: Quick validation (~2 min)
+./run-tests.sh load --restaurant 324672 --mode sanity
+
+# Full load test (~20 min)
 ./run-tests.sh load --restaurant 324672
 ```
 
@@ -264,14 +294,16 @@ Simulates realistic production traffic with mixed operations.
 - 20% - Order tracking
 - 15% - Other operations (restaurants, customers, etc.)
 
-**Load Pattern:** 0 → 25 → 50 → 100 → 100 → 50 → 0 VUs
-
 ---
 
 #### Stress Test
 Push the system to find its breaking point.
 
 ```bash
+# Sanity mode: Quick validation (~2 min)
+./run-tests.sh stress --restaurant 324672 --mode sanity
+
+# Full stress test (~15 min)
 ./run-tests.sh stress --restaurant 324672
 ```
 
@@ -281,8 +313,6 @@ Push the system to find its breaking point.
 - 25% - Order + Payment
 - 15% - Order tracking
 - 10% - Mixed operations
-
-**Load Pattern:** 0 → 100 → 200 → 300 → 500 → 500 → 300 → 0 VUs
 
 **Relaxed thresholds:** Up to 20% error rate allowed (finding limits)
 
@@ -300,8 +330,8 @@ BASE_URL=http://localhost:8080/api/v2
 RESTAURANT_ID=324672
 CUSTOMER_ID=100003
 
-# User Mode Configuration (for lifecycle test)
-USER_MODE=single          # single | multi
+# User Mode Configuration (for lifecycle/user-journey tests)
+USER_MODE=single          # sanity | single | multi
 USER_COUNT=1000           # Number of users in pool
 ORDER_COUNT=1000          # Number of orders to create
 
@@ -333,14 +363,17 @@ Load Tests:
   stress            System breaking point (15 min)
 
 Options:
-  --url URL           Override BASE_URL
-  --restaurant ID     Set RESTAURANT_ID (required for most tests)
-  --customer ID       Set CUSTOMER_ID
-  --mode single|multi User mode for lifecycle test
-  --users N           Number of users in pool (default: 1000)
-  --orders N          Number of orders to create (default: 1000)
-  --dashboard         Open web dashboard at localhost:5665
-  --cloud TOKEN       Publish results to Grafana Cloud k6
+  --url URL              Override BASE_URL
+  --restaurant ID        Set RESTAURANT_ID (required for most tests)
+  --customer ID          Set CUSTOMER_ID
+  --mode sanity|single|multi  Test mode:
+                           sanity = single user validation
+                           single = ramping VUs load test (default)
+                           multi  = shared iterations with fixed order count
+  --users N              Number of users in pool (default: 1000)
+  --orders N             Number of orders to create (default: 1000)
+  --dashboard            Open web dashboard at localhost:5665
+  --cloud TOKEN          Publish results to Grafana Cloud k6
 ```
 
 ## Backend Setup for Load Testing
@@ -422,22 +455,34 @@ sms.2factor.url=http://localhost:8090/mock/otp
 # 1. Validate API is working
 ./run-tests.sh smoke --restaurant 324672
 
-# 2. Test individual components
+# 2. Sanity check ALL scripts with single user (quick validation)
+./run-tests.sh menu-stress --restaurant 324672 --mode sanity
+./run-tests.sh login-stress --restaurant 324672 --mode sanity
+./run-tests.sh order-stress --restaurant 324672 --mode sanity
+./run-tests.sh tracking-stress --restaurant 324672 --mode sanity
+./run-tests.sh user-journey --restaurant 324672 --mode sanity
+./run-tests.sh lifecycle --restaurant 324672 --mode sanity
+./run-tests.sh load --restaurant 324672 --mode sanity
+./run-tests.sh stress --restaurant 324672 --mode sanity
+
+# 3. Test individual components under full stress
 ./run-tests.sh menu-stress --restaurant 324672
 ./run-tests.sh login-stress --restaurant 324672
 ./run-tests.sh order-stress --restaurant 324672
 ./run-tests.sh tracking-stress --restaurant 324672
 
-# 3. Test complete flows
+# 4. Test complete flows with multiple users
 ./run-tests.sh user-journey --restaurant 324672
 ./run-tests.sh lifecycle --restaurant 324672
 
-# 4. Load testing
+# 5. Load testing
 ./run-tests.sh load --restaurant 324672
 
-# 5. Find limits
+# 6. Find limits
 ./run-tests.sh stress --restaurant 324672
 ```
+
+> **Tip:** Always run `--mode sanity` first on all scripts to validate they work correctly before running full load tests. This saves time by catching configuration issues early (sanity checks complete in ~1-2 minutes each).
 
 ### Multi-User Load Testing
 

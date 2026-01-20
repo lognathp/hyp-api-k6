@@ -23,6 +23,54 @@ import { check } from 'k6';
 import { CONFIG, ENDPOINTS } from '../config.js';
 
 /**
+ * Fetch restaurant details including location
+ * @param {string} restaurantId - Restaurant ID
+ * @returns {object} { id, name, location: { latitude, longitude } }
+ */
+export function fetchRestaurantLocation(restaurantId) {
+    const url = `${CONFIG.BASE_URL}${ENDPOINTS.RESTAURANT_GET(restaurantId)}`;
+    const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+    };
+
+    console.log(`Fetching restaurant location for: ${restaurantId}`);
+    const res = http.get(url, { headers, timeout: CONFIG.REQUEST_TIMEOUT });
+
+    if (res.status !== 200) {
+        console.warn(`Failed to fetch restaurant: ${res.status}`);
+        return null;
+    }
+
+    try {
+        const body = JSON.parse(res.body);
+        const restaurant = body.data?.[0] || body.data;
+
+        if (!restaurant) {
+            console.warn('Restaurant data not found');
+            return null;
+        }
+
+        // Extract location from restaurant
+        const location = restaurant.location || restaurant.address?.location || {
+            latitude: restaurant.latitude,
+            longitude: restaurant.longitude,
+        };
+
+        console.log(`Restaurant location: ${JSON.stringify(location)}`);
+
+        return {
+            id: restaurant.id || restaurant._id,
+            name: restaurant.name || restaurant.restaurantName,
+            location: location,
+        };
+    } catch (e) {
+        console.error(`Failed to parse restaurant data: ${e.message}`);
+        return null;
+    }
+}
+
+/**
  * Fetch menu categories with items from API
  * Returns structured data: { categories, items, taxes }
  */

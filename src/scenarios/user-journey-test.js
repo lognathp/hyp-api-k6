@@ -11,10 +11,13 @@
  * 7. Create payment
  * 8. Verify payment
  *
- * Duration: ~10 minutes
- * VUs: Ramping 0 → 30 → 50 → 30 → 0
+ * Modes:
+ * - sanity: Single user, quick validation (~2 min)
+ * - load:   Multiple users, full load test (~10 min)
  *
- * Usage: ./run-tests.sh user-journey --restaurant 324672
+ * Usage:
+ *   ./run-tests.sh user-journey --restaurant 324672 --mode sanity  # Quick validation
+ *   ./run-tests.sh user-journey --restaurant 324672                # Full load test
  */
 
 import { sleep, group, check } from 'k6';
@@ -29,8 +32,10 @@ import {
     generateUserPool,
     getUserFromPool,
     fetchMenuData,
+    fetchRestaurantLocation,
     generateDynamicOrderDto,
     generateOrderDto,
+    generateAddressDto,
 } from '../data/test-data.js';
 
 // Custom metrics
@@ -44,23 +49,36 @@ const totalJourneyTime = new Trend('total_journey_duration');
 const journeysCompleted = new Counter('journeys_completed');
 const journeysFailed = new Counter('journeys_failed');
 
+// Check if sanity mode (single user validation)
+const isSanityMode = CONFIG.USER_MODE === 'sanity';
+
 // Generate user pool
-const userPool = generateUserPool(1000);
+const userPool = generateUserPool(isSanityMode ? 1 : 1000);
+
+// Scenario configurations
+const sanityScenario = {
+    executor: 'per-vu-iterations',
+    vus: 1,
+    iterations: 1,
+    maxDuration: '5m',
+};
+
+const loadScenario = {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+        { duration: '1m', target: 15 },    // Ramp up
+        { duration: '2m', target: 30 },    // Increase
+        { duration: '3m', target: 50 },    // Peak load
+        { duration: '2m', target: 30 },    // Scale down
+        { duration: '2m', target: 15 },    // Further down
+        { duration: '1m', target: 0 },     // Ramp down
+    ],
+};
 
 export const options = {
     scenarios: {
-        user_journey: {
-            executor: 'ramping-vus',
-            startVUs: 0,
-            stages: [
-                { duration: '1m', target: 15 },    // Ramp up
-                { duration: '2m', target: 30 },    // Increase
-                { duration: '3m', target: 50 },    // Peak load
-                { duration: '2m', target: 30 },    // Scale down
-                { duration: '2m', target: 15 },    // Further down
-                { duration: '1m', target: 0 },     // Ramp down
-            ],
-        },
+        user_journey: isSanityMode ? sanityScenario : loadScenario,
     },
     thresholds: {
         ...THRESHOLDS,
@@ -76,6 +94,7 @@ export const options = {
 export default function (data) {
     const restaurantId = CONFIG.RESTAURANT_ID;
     const menuData = data?.menuData;
+    const restaurantLocation = data?.restaurantLocation;
     const user = getUserFromPool(userPool, __VU);
 
     const journeyStart = Date.now();
@@ -157,17 +176,55 @@ export default function (data) {
     // ========================================
     // STEP 3: Address & Delivery Quote
     // ========================================
+    let addressId = null;
     group('3. Address & Quote', function () {
         const start = Date.now();
 
-        // Fetch customer addresses
+        // Fetch customer addresses (200 = has addresses, 404 = no addresses - both are valid)
         let res = apiGet(`${ENDPOINTS.ADDRESS_LIST}?customerId=${customerId}`);
-        check(res, { 'Addresses loaded': (r) => r.status === 200 });
+        check(res, { 'Address API responded': (r) => r.status === 200 || r.status === 404 });
+
+        // Parse addresses and get first available address (if any exist)
+        if (res.status === 200) {
+            try {
+                const body = JSON.parse(res.body);
+                const addresses = body.data || [];
+                if (addresses.length > 0) {
+                    // Use the first address (or default if available)
+                    const defaultAddr = addresses.find(a => a.isDefault);
+                    addressId = defaultAddr?.id || addresses[0]?.id || addresses[0]?._id;
+                }
+            } catch (e) {
+                console.warn(`Failed to parse addresses: ${e.message}`);
+            }
+        }
+
+        // If no address exists, create one for this customer
+        if (!addressId) {
+            console.log(`No address found for customer ${customerId}, creating one...`);
+            const addressPayload = generateAddressDto(customerId, restaurantLocation);
+            res = apiPost(ENDPOINTS.ADDRESS_CREATE, addressPayload);
+
+            if (res.status === 200) {
+                try {
+                    const body = JSON.parse(res.body);
+                    addressId = body.data?.id || body.data?._id || body.data?.[0]?.id;
+                    check(res, { 'Address created': () => !!addressId });
+                } catch (e) {
+                    console.warn(`Failed to parse created address: ${e.message}`);
+                }
+            }
+        }
+
+        if (!addressId) {
+            console.warn('No address available, using fallback');
+            addressId = '106335'; // Fallback to default
+        }
 
         sleep(randomSleep(300, 500));
 
-        // Get delivery quote
-        res = apiGet(`${ENDPOINTS.DELIVERY_QUOTE(restaurantId)}?addressId=106335`);
+        // Get delivery quote with customer's actual address
+        res = apiGet(`${ENDPOINTS.DELIVERY_QUOTE(restaurantId)}?addressId=${addressId}`);
         check(res, { 'Quote received': (r) => r.status === 200 || r.status === 404 });
 
         quoteTime.add(Date.now() - start);
@@ -181,18 +238,18 @@ export default function (data) {
     group('4. Place Order', function () {
         const start = Date.now();
 
-        // Generate order with online payment
+        // Generate order with online payment and customer's address
         let orderPayload;
+        const orderOptions = {
+            paymentType: 'CREDIT',
+            orderType: '1',
+            addressId: addressId, // Use customer's actual address
+        };
+
         if (menuData && menuData.items && menuData.items.length > 0) {
-            orderPayload = generateDynamicOrderDto(restaurantId, customerId, menuData, {
-                paymentType: 'CREDIT',
-                orderType: '1',
-            });
+            orderPayload = generateDynamicOrderDto(restaurantId, customerId, menuData, orderOptions);
         } else {
-            orderPayload = generateOrderDto(restaurantId, customerId, {
-                paymentType: 'CREDIT',
-                orderType: '1',
-            });
+            orderPayload = generateOrderDto(restaurantId, customerId, orderOptions);
         }
 
         const res = apiPost(ENDPOINTS.ORDER_CREATE, orderPayload);
@@ -276,19 +333,36 @@ export default function (data) {
 
 export function setup() {
     console.log('='.repeat(60));
-    console.log('USER JOURNEY TEST - Complete User Flow');
+    console.log(`USER JOURNEY TEST - ${isSanityMode ? 'SANITY MODE' : 'LOAD TEST'}`);
     console.log('='.repeat(60));
     console.log(`Target: ${CONFIG.BASE_URL}`);
     console.log(`Restaurant: ${CONFIG.RESTAURANT_ID || 'NOT SET!'}`);
+    console.log(`Mode: ${isSanityMode ? 'sanity (single user validation)' : 'load (multi-user)'}`);
     console.log(`User Pool: ${userPool.length} users`);
     console.log('');
     console.log('Flow: Menu → Login → Address → Quote → Order → Payment');
-    console.log('Load Pattern: 0 → 30 → 50 → 30 → 0 VUs');
-    console.log('Duration: ~10 minutes');
+    if (isSanityMode) {
+        console.log('VUs: 1 (single iteration)');
+        console.log('Duration: ~2 minutes');
+    } else {
+        console.log('Load Pattern: 0 → 15 → 30 → 50 → 30 → 15 → 0 VUs');
+        console.log('Duration: ~10 minutes');
+    }
     console.log('='.repeat(60));
 
     if (!CONFIG.RESTAURANT_ID) {
         throw new Error('RESTAURANT_ID is required! Use --env RESTAURANT_ID=xxx');
+    }
+
+    // Fetch restaurant location for address creation
+    console.log('\nFetching restaurant location...');
+    const restaurantData = fetchRestaurantLocation(CONFIG.RESTAURANT_ID);
+    const restaurantLocation = restaurantData?.location || null;
+
+    if (restaurantLocation) {
+        console.log(`Restaurant location: lat=${restaurantLocation.latitude}, lng=${restaurantLocation.longitude}`);
+    } else {
+        console.warn('Could not fetch restaurant location, will use fallback');
     }
 
     // Fetch menu data
@@ -301,7 +375,7 @@ export function setup() {
         console.warn('Using static menu data');
     }
 
-    return { startTime: Date.now(), menuData };
+    return { startTime: Date.now(), menuData, restaurantLocation };
 }
 
 export function teardown(data) {

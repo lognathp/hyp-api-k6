@@ -7,10 +7,13 @@
  * - 20% Order tracking
  * - 15% Other operations (restaurants, customers, etc.)
  *
- * Duration: ~20 minutes
- * VUs: Ramping 0 → 50 → 100 → 100 → 50 → 0
+ * Modes:
+ * - sanity: Single user, quick validation (~2 min)
+ * - load:   Multiple users, full load test (~20 min)
  *
- * Usage: ./run-tests.sh load --restaurant 324672
+ * Usage:
+ *   ./run-tests.sh load --restaurant 324672 --mode sanity  # Quick validation
+ *   ./run-tests.sh load --restaurant 324672                # Full load test
  */
 
 import { sleep, group, check } from 'k6';
@@ -44,23 +47,36 @@ const orderRequests = new Counter('order_requests');
 const trackingRequests = new Counter('tracking_requests');
 const ordersCreated = new Counter('orders_created');
 
+// Check if sanity mode
+const isSanityMode = CONFIG.USER_MODE === 'sanity';
+
 // User pool
-const userPool = generateUserPool(1000);
+const userPool = generateUserPool(isSanityMode ? 1 : 1000);
+
+// Scenario configurations
+const sanityScenario = {
+    executor: 'per-vu-iterations',
+    vus: 1,
+    iterations: 4,  // Test each traffic type once
+    maxDuration: '5m',
+};
+
+const loadScenario = {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+        { duration: '2m', target: 25 },    // Ramp up
+        { duration: '3m', target: 50 },    // Increase
+        { duration: '5m', target: 100 },   // Peak
+        { duration: '5m', target: 100 },   // Sustain
+        { duration: '3m', target: 50 },    // Scale down
+        { duration: '2m', target: 0 },     // Ramp down
+    ],
+};
 
 export const options = {
     scenarios: {
-        load_test: {
-            executor: 'ramping-vus',
-            startVUs: 0,
-            stages: [
-                { duration: '2m', target: 25 },    // Ramp up
-                { duration: '3m', target: 50 },    // Increase
-                { duration: '5m', target: 100 },   // Peak
-                { duration: '5m', target: 100 },   // Sustain
-                { duration: '3m', target: 50 },    // Scale down
-                { duration: '2m', target: 0 },     // Ramp down
-            ],
-        },
+        load_test: isSanityMode ? sanityScenario : loadScenario,
     },
     thresholds: {
         ...THRESHOLDS,
@@ -265,10 +281,11 @@ function otherOperations() {
 
 export function setup() {
     console.log('='.repeat(60));
-    console.log('LOAD TEST - Mixed Realistic Traffic');
+    console.log(`LOAD TEST - ${isSanityMode ? 'SANITY MODE' : 'MIXED REALISTIC TRAFFIC'}`);
     console.log('='.repeat(60));
     console.log(`Target: ${CONFIG.BASE_URL}`);
     console.log(`Restaurant: ${CONFIG.RESTAURANT_ID || 'NOT SET!'}`);
+    console.log(`Mode: ${isSanityMode ? 'sanity (single user validation)' : 'load (multi-user)'}`);
     console.log('');
     console.log('Traffic Mix:');
     console.log('  40% - Menu browsing');
@@ -276,8 +293,13 @@ export function setup() {
     console.log('  20% - Order tracking');
     console.log('  15% - Other operations');
     console.log('');
-    console.log('Load Pattern: 0 → 50 → 100 → 100 → 50 → 0 VUs');
-    console.log('Duration: ~20 minutes');
+    if (isSanityMode) {
+        console.log('VUs: 1, Iterations: 4');
+        console.log('Duration: ~2 minutes');
+    } else {
+        console.log('Load Pattern: 0 → 25 → 50 → 100 → 100 → 50 → 0 VUs');
+        console.log('Duration: ~20 minutes');
+    }
     console.log('='.repeat(60));
 
     if (!CONFIG.RESTAURANT_ID) {

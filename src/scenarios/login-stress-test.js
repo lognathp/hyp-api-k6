@@ -7,10 +7,13 @@
  *
  * Uses fixed OTP (123456) when backend is in load test mode.
  *
- * Duration: ~5 minutes
- * VUs: Ramping 0 → 50 → 100 → 50 → 0
+ * Modes:
+ * - sanity: Single user, quick validation (~1 min)
+ * - load:   Multiple users, full stress test (~5 min)
  *
- * Usage: ./run-tests.sh login-stress --restaurant 324672
+ * Usage:
+ *   ./run-tests.sh login-stress --restaurant 324672 --mode sanity  # Quick validation
+ *   ./run-tests.sh login-stress --restaurant 324672                # Full stress test
  */
 
 import { sleep, group, check } from 'k6';
@@ -28,23 +31,36 @@ const totalLoginTime = new Trend('total_login_duration');
 const loginsCompleted = new Counter('logins_completed');
 const loginsFailed = new Counter('logins_failed');
 
+// Check if sanity mode
+const isSanityMode = CONFIG.USER_MODE === 'sanity';
+
 // Generate user pool
-const userPool = generateUserPool(1000);
+const userPool = generateUserPool(isSanityMode ? 1 : 1000);
+
+// Scenario configurations
+const sanityScenario = {
+    executor: 'per-vu-iterations',
+    vus: 1,
+    iterations: 1,
+    maxDuration: '2m',
+};
+
+const stressScenario = {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+        { duration: '30s', target: 25 },   // Ramp up
+        { duration: '1m', target: 50 },    // Increase
+        { duration: '1m', target: 100 },   // Peak load
+        { duration: '1m', target: 100 },   // Sustain peak
+        { duration: '1m', target: 50 },    // Scale down
+        { duration: '30s', target: 0 },    // Ramp down
+    ],
+};
 
 export const options = {
     scenarios: {
-        login_stress: {
-            executor: 'ramping-vus',
-            startVUs: 0,
-            stages: [
-                { duration: '30s', target: 25 },   // Ramp up
-                { duration: '1m', target: 50 },    // Increase
-                { duration: '1m', target: 100 },   // Peak load
-                { duration: '1m', target: 100 },   // Sustain peak
-                { duration: '1m', target: 50 },    // Scale down
-                { duration: '30s', target: 0 },    // Ramp down
-            ],
-        },
+        login_stress: isSanityMode ? sanityScenario : stressScenario,
     },
     thresholds: {
         ...THRESHOLDS,
@@ -135,14 +151,20 @@ if (isHttpOk) {
 
 export function setup() {
     console.log('='.repeat(60));
-    console.log('LOGIN STRESS TEST - Authentication Under Heavy Load');
+    console.log(`LOGIN STRESS TEST - ${isSanityMode ? 'SANITY MODE' : 'STRESS TEST'}`);
     console.log('='.repeat(60));
     console.log(`Target: ${CONFIG.BASE_URL}`);
     console.log(`Restaurant: ${CONFIG.RESTAURANT_ID || 'NOT SET!'}`);
+    console.log(`Mode: ${isSanityMode ? 'sanity (single user validation)' : 'stress (multi-user)'}`);
     console.log(`Fixed OTP: ${CONFIG.LOAD_TEST_OTP}`);
     console.log(`User Pool: ${userPool.length} users`);
-    console.log('Load Pattern: 0 → 50 → 100 → 50 → 0 VUs');
-    console.log('Duration: ~5 minutes');
+    if (isSanityMode) {
+        console.log('VUs: 1 (single iteration)');
+        console.log('Duration: ~1 minute');
+    } else {
+        console.log('Load Pattern: 0 → 25 → 50 → 100 → 50 → 0 VUs');
+        console.log('Duration: ~5 minutes');
+    }
     console.log('='.repeat(60));
 
     if (!CONFIG.RESTAURANT_ID) {
