@@ -159,6 +159,7 @@ export const ENDPOINTS = {
 
     // Order
     ORDER_LIST: '/order',
+    ORDER_LIST_BY_STATUS: (status) => `/order?status_eq=${status}&offset=0&limit=20`,
     ORDER_GET: (id) => `/order/${id}`,
     ORDER_CREATE: '/order',
     ORDER_UPDATE: (id) => `/order/${id}`,
@@ -177,7 +178,7 @@ export const ENDPOINTS = {
     DELIVERY_QUOTE: (restaurantId) => `/delivery/quote/${restaurantId}`,
     DELIVERY_CREATE: (orderId) => `/delivery/create/${orderId}`,
     DELIVERY_FULFILL: (orderId) => `/delivery/fulfill/${orderId}`,
-    DELIVERY_STATUS: (orderId) => `/delivery/status/${orderId}`,
+    DELIVERY_STATUS: (orderId) => `/delivery?orderId_eq=${orderId}`,
     DELIVERY_CONSUME: (orderId) => `/delivery/consume/${orderId}`,
     DELIVERY_CALLBACK: '/delivery/callback',
     DELIVERY_RIDER_LOCATION: (orderId) => `/delivery/rider-location/${orderId}`,

@@ -1,12 +1,14 @@
 /**
- * Order Tracking Stress Test - Order Status API Under Heavy Load
+ * Order Tracking Stress Test - Delivery Tracking APIs Under Heavy Load
  *
- * Simulates users constantly checking order status:
- * - Order tracking API
- * - Order status API
- * - Delivery status API
+ * Simulates users tracking active and completed deliveries:
+ * - Order tracking API (/order/track/{orderId})
+ * - Delivery status API (/delivery/status/{orderId})
+ * - Rider location API (/delivery/rider-location/{orderId})
  *
- * Requires existing orders in the system for realistic testing.
+ * Test Data Requirements:
+ * - Orders with status: DELIVERED, OUT_FOR_PICKUP, or OUT_FOR_DELIVERY
+ * - Orders must have delivery records with status "fulfilled"
  *
  * Modes:
  * - sanity: Single user, quick validation (~1 min)
@@ -25,9 +27,9 @@ import { apiGet, randomSleep } from '../utils/helpers.js';
 
 // Custom metrics
 const trackingSuccessRate = new Rate('tracking_success_rate');
-const orderStatusTime = new Trend('order_status_duration');
 const orderTrackTime = new Trend('order_track_duration');
 const deliveryStatusTime = new Trend('delivery_status_duration');
+const riderLocationTime = new Trend('rider_location_duration');
 const trackingRequests = new Counter('tracking_requests');
 
 // Check if sanity mode
@@ -41,7 +43,7 @@ let sampleOrderIds = [];
 const sanityScenario = {
     executor: 'per-vu-iterations',
     vus: 1,
-    iterations: 4,  // Test each tracking operation once
+    iterations: 3,  // Test each tracking API once (track, status, location)
     maxDuration: '2m',
 };
 
@@ -65,9 +67,9 @@ export const options = {
     thresholds: {
         ...THRESHOLDS,
         'tracking_success_rate': ['rate>0.95'],
-        'order_status_duration': ['p(95)<1500'],
         'order_track_duration': ['p(95)<1500'],
         'delivery_status_duration': ['p(95)<1500'],
+        'rider_location_duration': ['p(95)<1500'],
     },
 };
 
@@ -75,66 +77,29 @@ export default function (data) {
     const orderIds = data?.orderIds || sampleOrderIds;
 
     if (orderIds.length === 0) {
-        // If no specific orders, just hit the order list endpoint
-        group('Order List', function () {
-            const start = Date.now();
-            const res = apiGet(ENDPOINTS.ORDER_LIST);
-            orderStatusTime.add(Date.now() - start);
-            trackingRequests.add(1);
-
-            const success = check(res, {
-                'Order list OK': (r) => r.status === 200,
-            });
-            trackingSuccessRate.add(success ? 1 : 0);
-        });
-
-        sleep(randomSleep(300, 800));
+        console.warn('No trackable orders available. Skipping iteration.');
+        sleep(1);
         return;
     }
 
     // Pick a random order to track
     const orderId = orderIds[Math.floor(Math.random() * orderIds.length)];
 
-    // Simulate user checking order status
+    // Simulate user tracking active/completed deliveries
     const action = Math.random();
 
-    if (action < 0.4) {
-        // 40% - Get order status
-        getOrderStatus(orderId);
-    } else if (action < 0.7) {
-        // 30% - Track order
+    if (action < 0.5) {
+        // 50% - Track order (most common user action)
         trackOrder(orderId);
-    } else if (action < 0.9) {
-        // 20% - Get delivery status
+    } else if (action < 0.8) {
+        // 30% - Get delivery status
         getDeliveryStatus(orderId);
     } else {
-        // 10% - Get rider location
+        // 20% - Get rider location
         getRiderLocation(orderId);
     }
 
     sleep(randomSleep(500, 1500));
-}
-
-function getOrderStatus(orderId) {
-    group('Order Status', function () {
-        const start = Date.now();
-        const res = apiGet(ENDPOINTS.ORDER_GET(orderId));
-        orderStatusTime.add(Date.now() - start);
-        trackingRequests.add(1);
-
-        const success = check(res, {
-            'Order status OK': (r) => r.status === 200 || r.status === 404,
-        });
-        trackingSuccessRate.add(success ? 1 : 0);
-
-        if (res.status === 200) {
-            try {
-                const data = JSON.parse(res.body);
-                const status = data.data?.[0]?.status || data.data?.status;
-                // console.log(`Order ${orderId}: ${status}`);
-            } catch (e) {}
-        }
-    });
 }
 
 function trackOrder(orderId) {
@@ -167,7 +132,9 @@ function getDeliveryStatus(orderId) {
 
 function getRiderLocation(orderId) {
     group('Rider Location', function () {
+        const start = Date.now();
         const res = apiGet(ENDPOINTS.DELIVERY_RIDER_LOCATION(orderId));
+        riderLocationTime.add(Date.now() - start);
         trackingRequests.add(1);
 
         const success = check(res, {
@@ -185,7 +152,7 @@ export function setup() {
     console.log(`Restaurant: ${CONFIG.RESTAURANT_ID || 'Not set'}`);
     console.log(`Mode: ${isSanityMode ? 'sanity (single user validation)' : 'stress (multi-user)'}`);
     if (isSanityMode) {
-        console.log('VUs: 1, Iterations: 4');
+        console.log('VUs: 1, Iterations: 3');
         console.log('Duration: ~1 minute');
     } else {
         console.log('Load Pattern: 0 → 50 → 100 → 200 → 100 → 0 VUs');
@@ -193,27 +160,67 @@ export function setup() {
     }
     console.log('='.repeat(60));
 
-    // Fetch existing orders to track
-    console.log('\nFetching existing orders...');
-    const res = apiGet(ENDPOINTS.ORDER_LIST);
-    let orderIds = [];
+    // Fetch orders with delivery-trackable statuses
+    console.log('\nFetching trackable orders (DELIVERED, OUT_FOR_PICKUP, OUT_FOR_DELIVERY)...');
+    const trackableStatuses = ['DELIVERED', 'OUT_FOR_PICKUP', 'OUT_FOR_DELIVERY'];
+    let allOrders = [];
 
-    if (res.status === 200) {
-        try {
-            const data = JSON.parse(res.body);
-            const orders = data.data || [];
-            orderIds = orders.slice(0, 100).map(o => o.id || o._id).filter(Boolean);
-            console.log(`Found ${orderIds.length} orders to track`);
-        } catch (e) {
-            console.warn('Could not parse orders');
+    // Fetch orders for each status
+    for (const status of trackableStatuses) {
+        const res = apiGet(ENDPOINTS.ORDER_LIST_BY_STATUS(status));
+        if (res.status === 200) {
+            try {
+                const data = JSON.parse(res.body);
+                const orders = data.data || [];
+                console.log(`  - ${status}: ${orders.length} orders`);
+                allOrders = allOrders.concat(orders);
+            } catch (e) {
+                console.warn(`  - Could not parse ${status} orders`);
+            }
         }
     }
 
-    if (orderIds.length === 0) {
-        console.warn('No existing orders found. Will use order list endpoint.');
+    console.log(`\nTotal orders found: ${allOrders.length}`);
+
+    // Filter orders that have fulfilled delivery records
+    console.log('Filtering orders with fulfilled delivery records...');
+    let validOrderIds = [];
+
+    for (const order of allOrders.slice(0, 150)) {  // Check first 150 orders
+        const orderId = order.id || order._id;
+        if (!orderId) continue;
+
+        // Check if order has a delivery record
+        const deliveryRes = apiGet(ENDPOINTS.DELIVERY_STATUS(orderId));
+        if (deliveryRes.status === 200) {
+            try {
+                const deliveryData = JSON.parse(deliveryRes.body);
+                const deliveryStatus = deliveryData.data[0]?.status;
+            
+                // Check if delivery is fulfilled
+                if (deliveryStatus && (deliveryStatus.toLowerCase() === 'fulfilled' || deliveryStatus.toLowerCase() === 'completed')) {
+                    validOrderIds.push(orderId);
+                }
+            } catch (e) {
+                // Skip orders with invalid delivery data
+            }
+        }
+
+        // Limit to 100 valid orders for performance
+        if (validOrderIds.length >= 100) break;
     }
 
-    return { startTime: Date.now(), orderIds };
+    console.log(`Found ${validOrderIds.length} orders with fulfilled deliveries`);
+
+    if (validOrderIds.length === 0) {
+        console.warn('\  WARNING: No valid trackable orders found!');
+        console.warn('Please ensure you have orders with:');
+        console.warn('  1. Status: DELIVERED, OUT_FOR_PICKUP, or OUT_FOR_DELIVERY');
+        console.warn('  2. Delivery record with status: fulfilled');
+        console.warn('\nTest will skip iterations until valid orders are available.');
+    }
+
+    return { startTime: Date.now(), orderIds: validOrderIds };
 }
 
 export function teardown(data) {
