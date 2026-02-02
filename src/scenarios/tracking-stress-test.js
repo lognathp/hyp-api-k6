@@ -75,15 +75,15 @@ export default function (data) {
     const orderIds = data?.orderIds || sampleOrderIds;
 
     if (orderIds.length === 0) {
-        // If no specific orders, just hit the order list endpoint
-        group('Order List', function () {
+        // If no specific orders, fetch delivered orders list
+        group('Delivered Order List', function () {
             const start = Date.now();
-            const res = apiGet(ENDPOINTS.ORDER_LIST);
+            const res = apiGet(ENDPOINTS.ORDER_LIST_BY_STATUS('DELIVERED'));
             orderStatusTime.add(Date.now() - start);
             trackingRequests.add(1);
 
             const success = check(res, {
-                'Order list OK': (r) => r.status === 200,
+                'Delivered order list OK': (r) => r.status === 200,
             });
             trackingSuccessRate.add(success ? 1 : 0);
         });
@@ -193,9 +193,9 @@ export function setup() {
     }
     console.log('='.repeat(60));
 
-    // Fetch existing orders to track
-    console.log('\nFetching existing orders...');
-    const res = apiGet(ENDPOINTS.ORDER_LIST);
+    // Fetch delivered orders to track
+    console.log('\nFetching delivered orders...');
+    const res = apiGet(ENDPOINTS.ORDER_LIST_BY_STATUS('DELIVERED'));
     let orderIds = [];
 
     if (res.status === 200) {
@@ -203,14 +203,14 @@ export function setup() {
             const data = JSON.parse(res.body);
             const orders = data.data || [];
             orderIds = orders.slice(0, 100).map(o => o.id || o._id).filter(Boolean);
-            console.log(`Found ${orderIds.length} orders to track`);
+            console.log(`Found ${orderIds.length} delivered orders to track`);
         } catch (e) {
             console.warn('Could not parse orders');
         }
     }
 
     if (orderIds.length === 0) {
-        console.warn('No existing orders found. Will use order list endpoint.');
+        console.warn('No delivered orders found. Will use order list endpoint.');
     }
 
     return { startTime: Date.now(), orderIds };

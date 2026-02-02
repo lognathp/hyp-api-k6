@@ -159,6 +159,7 @@ export const ENDPOINTS = {
 
     // Order
     ORDER_LIST: '/order',
+    ORDER_LIST_BY_STATUS: (status) => `/order?status_eq=${status}`,
     ORDER_GET: (id) => `/order/${id}`,
     ORDER_CREATE: '/order',
     ORDER_UPDATE: (id) => `/order/${id}`,
