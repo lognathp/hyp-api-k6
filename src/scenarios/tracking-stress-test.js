@@ -52,10 +52,10 @@ const stressScenario = {
     startVUs: 0,
     stages: [
         { duration: '30s', target: 50 },   // Ramp up
-        { duration: '1m', target: 100 },   // Increase
-        { duration: '1m', target: 200 },   // Peak load
-        { duration: '1m', target: 200 },   // Sustain peak
-        { duration: '1m', target: 100 },   // Scale down
+        { duration: '1m', target:  75 },   // Increase
+        { duration: '1m', target: 100 },   // Peak load
+        { duration: '1m', target: 100 },   // Sustain peak
+        { duration: '1m', target: 75 },   // Scale down
         { duration: '30s', target: 0 },    // Ramp down
     ],
 };

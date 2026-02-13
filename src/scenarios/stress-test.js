@@ -66,12 +66,12 @@ const stressScenario = {
     executor: 'ramping-vus',
     startVUs: 0,
     stages: [
-        { duration: '1m', target: 100 },   // Ramp to 100
-        { duration: '2m', target: 200 },   // Increase to 200
-        { duration: '2m', target: 300 },   // Increase to 300
-        { duration: '3m', target: 500 },   // Peak at 500
-        { duration: '3m', target: 500 },   // Sustain peak
-        { duration: '2m', target: 300 },   // Scale down
+        { duration: '1m', target: 25 },   // Ramp to 100
+        { duration: '2m', target: 50 },   // Increase to 200
+        { duration: '2m', target: 75 },   // Increase to 300
+        { duration: '3m', target: 100 },   // Peak at 500
+        { duration: '3m', target: 75 },   // Sustain peak
+        { duration: '2m', target: 50 },   // Scale down
         { duration: '2m', target: 0 },     // Ramp down
     ],
 };

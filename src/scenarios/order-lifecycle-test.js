@@ -60,7 +60,8 @@ const deliverySuccessRate = new Rate('delivery_success_rate');
 const menuBrowseTime = new Trend('menu_browse_duration');
 const loginTime = new Trend('login_duration');
 const orderTime = new Trend('order_duration');
-const paymentTime = new Trend('payment_duration');
+const paymentCreateTime = new Trend('payment_create_duration');
+const paymentVerifyTime = new Trend('payment_verify_duration');
 const posTime = new Trend('pos_duration');
 const deliveryTime = new Trend('delivery_duration');
 const trackingTime = new Trend('tracking_duration');
@@ -324,7 +325,7 @@ export default function (data) {
         }
 
         paymentSuccessRate.add(success && paymentOrderId ? 1 : 0);
-        paymentTime.add(Date.now() - start);
+        paymentCreateTime.add(Date.now() - start);
     });
 
     if (!paymentOrderId) {
@@ -347,7 +348,7 @@ export default function (data) {
 
         const success = check(res, { 'Payment verified': (r) => r.status === 200 });
         paymentSuccessRate.add(success ? 1 : 0);
-        paymentTime.add(Date.now() - start);
+        paymentVerifyTime.add(Date.now() - start);
     });
 
     // Wait for payment to be processed

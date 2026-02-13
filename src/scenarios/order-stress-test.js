@@ -37,7 +37,8 @@ import {
 const orderSuccessRate = new Rate('order_success_rate');
 const paymentSuccessRate = new Rate('payment_success_rate');
 const orderCreateTime = new Trend('order_create_duration');
-const paymentTime = new Trend('payment_duration');
+const paymentCreateTime = new Trend('payment_create_duration');
+const paymentVerifyTime = new Trend('payment_verify_duration');
 const totalOrderFlowTime = new Trend('total_order_flow_duration');
 const ordersCreated = new Counter('orders_created');
 const ordersFailed = new Counter('orders_failed');
@@ -78,7 +79,8 @@ export const options = {
         'order_success_rate': ['rate>0.90'],
         'payment_success_rate': ['rate>0.90'],
         'order_create_duration': ['p(95)<3000'],
-        'payment_duration': ['p(95)<2000'],
+        'payment_create_duration': ['p(95)<2000'],
+        'payment_verify_duration': ['p(95)<2000'],
         'total_order_flow_duration': ['p(95)<8000'],
     },
 };
@@ -186,47 +188,59 @@ export default function (data) {
     sleep(randomSleep(200, 400));
 
     // Step 4: Payment Flow
-    group('4. Payment', function () {
-        const start = Date.now();
-        let paymentOrderId = null;
+group('4. Payment', function () {
+    let paymentOrderId = null;
 
-        // Create payment
-        let res = apiPost(ENDPOINTS.PAYMENT_CREATE(orderId), {});
-        let success = check(res, {
-            'Payment created': (r) => r.status === 200,
-        });
+    // -----------------------
+    // Create Payment
+    // -----------------------
+    const createStart = Date.now();
 
-        if (success) {
-            try {
-                const body = JSON.parse(res.body);
-                paymentOrderId = body.data?.[0]?.paymentOrderId;
-            } catch (e) {}
-        }
+    let res = apiPost(ENDPOINTS.PAYMENT_CREATE(orderId), {});
+    const createDuration = Date.now() - createStart;
+    paymentCreateTime.add(createDuration);
 
-        if (!paymentOrderId) {
-            paymentSuccessRate.add(0);
-            paymentTime.add(Date.now() - start);
-            return;
-        }
-
-        sleep(randomSleep(100, 200));
-
-        // Verify payment
-        const verifyPayload = generatePaymentVerifyDto();
-        verifyPayload.razorpayOrderId = paymentOrderId;
-        res = apiPost(ENDPOINTS.PAYMENT_VERIFY(orderId), verifyPayload);
-
-        success = check(res, {
-            'Payment verified': (r) => r.status === 200,
-        });
-
-        paymentSuccessRate.add(success ? 1 : 0);
-        paymentTime.add(Date.now() - start);
-
-        if (success) {
-            orderSuccess = true;
-        }
+    let createSuccess = check(res, {
+        'Payment created': (r) => r.status === 200,
     });
+
+    if (createSuccess) {
+        try {
+            const body = JSON.parse(res.body);
+            paymentOrderId = body.data?.[0]?.paymentOrderId;
+        } catch (e) {}
+    }
+
+    if (!paymentOrderId) {
+        paymentSuccessRate.add(0);
+        return;
+    }
+
+    sleep(randomSleep(100, 200));
+
+    // -----------------------
+    // Verify Payment
+    // -----------------------
+    const verifyStart = Date.now();
+
+    const verifyPayload = generatePaymentVerifyDto();
+    verifyPayload.razorpayOrderId = paymentOrderId;
+
+    res = apiPost(ENDPOINTS.PAYMENT_VERIFY(orderId), verifyPayload);
+
+    const verifyDuration = Date.now() - verifyStart;
+    paymentVerifyTime.add(verifyDuration);
+
+    const verifySuccess = check(res, {
+        'Payment verified': (r) => r.status === 200,
+    });
+
+    paymentSuccessRate.add(verifySuccess ? 1 : 0);
+
+    if (verifySuccess) {
+        orderSuccess = true;
+    }
+});
 
     totalOrderFlowTime.add(Date.now() - flowStart);
 
