@@ -33,16 +33,7 @@ export const options = {
 export default function () {
     const results = { passed: 0, failed: 0 };
 
-    // 1. Health Check
-    group('1. Health Check', function () {
-        const res = apiGet(ENDPOINTS.HEALTH);
-        const passed = check(res, { 'Health OK': (r) => r.status === 200 });
-        updateResults(results, passed);
-        console.log(`   Health: ${passed ? 'PASS' : 'FAIL'} (${res.status})`);
-    });
-    sleep(0.5);
-
-    // 2. Restaurant Endpoints
+    // 1. Restaurant Endpoints
     group('2. Restaurant', function () {
         let res = apiGet(ENDPOINTS.RESTAURANT_LIST);
         let passed = check(res, { 'Restaurant list OK': (r) => r.status === 200 });

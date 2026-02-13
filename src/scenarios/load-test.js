@@ -112,29 +112,35 @@ export default function (data) {
 
 function browseMenu(restaurantId) {
     group('Menu Browse', function () {
-        const start = Date.now();
+        let apiTime = 0;
         let success = true;
 
         // Fetch menu
+        let start = Date.now();
         let res = apiGet(ENDPOINTS.MENU_CATEGORY(restaurantId));
+        apiTime += Date.now() - start;
         if (res.status !== 200) success = false;
         menuRequests.add(1);
 
         sleep(randomSleep(200, 500));
 
         // Fetch categories
+        start = Date.now();
         res = apiGet(ENDPOINTS.CATEGORY_LIST);
+        apiTime += Date.now() - start;
         if (res.status !== 200) success = false;
         menuRequests.add(1);
 
         sleep(randomSleep(100, 300));
 
         // Fetch addons
+        start = Date.now();
         res = apiGet(ENDPOINTS.ADDON_GROUP_LIST);
+        apiTime += Date.now() - start;
         if (res.status !== 200) success = false;
         menuRequests.add(1);
 
-        menuTime.add(Date.now() - start);
+        menuTime.add(apiTime / 3);
         menuSuccessRate.add(success ? 1 : 0);
         overallSuccessRate.add(success ? 1 : 0);
     });
@@ -241,20 +247,28 @@ function trackOrders(orderIds) {
         if (orderIds && orderIds.length > 0) {
             const orderId = orderIds[Math.floor(Math.random() * orderIds.length)];
 
-            let res = apiGet(ENDPOINTS.ORDER_GET(orderId));
-            if (res.status !== 200 && res.status !== 404) success = false;
-            trackingRequests.add(1);
+            // Simulate user tracking pattern (same as tracking-stress-test)
+            const action = Math.random();
 
-            sleep(randomSleep(100, 300));
-
-            res = apiGet(ENDPOINTS.ORDER_TRACK(orderId));
-            if (res.status !== 200 && res.status !== 404) success = false;
-            trackingRequests.add(1);
+            if (action < 0.5) {
+                // 50% - Track order (most common)
+                const res = apiGet(ENDPOINTS.ORDER_TRACK(orderId));
+                if (res.status !== 200 && res.status !== 404) success = false;
+                trackingRequests.add(1);
+            } else if (action < 0.8) {
+                // 30% - Delivery status
+                const res = apiGet(ENDPOINTS.DELIVERY_STATUS(orderId));
+                if (res.status !== 200 && res.status !== 404) success = false;
+                trackingRequests.add(1);
+            } else {
+                // 20% - Rider location
+                const res = apiGet(ENDPOINTS.DELIVERY_RIDER_LOCATION(orderId));
+                if (res.status !== 200 && res.status !== 404) success = false;
+                trackingRequests.add(1);
+            }
         } else {
-            // Just fetch order list
-            const res = apiGet(ENDPOINTS.ORDER_LIST);
-            if (res.status !== 200) success = false;
-            trackingRequests.add(1);
+            console.warn('No trackable orders available for tracking flow.');
+            success = false;
         }
 
         trackingTime.add(Date.now() - start);
@@ -309,18 +323,54 @@ export function setup() {
     // Fetch menu data
     const menuData = fetchMenuData(CONFIG.RESTAURANT_ID);
 
-    // Fetch existing orders for tracking
-    const res = apiGet(ENDPOINTS.ORDER_LIST);
+    // Fetch trackable orders (same approach as tracking-stress-test)
+    console.log('\nFetching trackable orders (DELIVERED, OUT_FOR_PICKUP, OUT_FOR_DELIVERY)...');
+    const trackableStatuses = ['DELIVERED', 'OUT_FOR_PICKUP', 'OUT_FOR_DELIVERY'];
+    let allOrders = [];
+
+    for (const status of trackableStatuses) {
+        const res = apiGet(ENDPOINTS.ORDER_LIST_BY_STATUS(status));
+        if (res.status === 200) {
+            try {
+                const data = JSON.parse(res.body);
+                const orders = data.data || [];
+                console.log(`  - ${status}: ${orders.length} orders`);
+                allOrders = allOrders.concat(orders);
+            } catch (e) {
+                console.warn(`  - Could not parse ${status} orders`);
+            }
+        }
+    }
+
+    console.log(`Total orders found: ${allOrders.length}`);
+
+    // Filter orders that have fulfilled delivery records
+    console.log('Filtering orders with fulfilled delivery records...');
     let orderIds = [];
-    if (res.status === 200) {
-        try {
-            const data = JSON.parse(res.body);
-            orderIds = (data.data || []).slice(0, 100).map(o => o.id).filter(Boolean);
-        } catch (e) {}
+
+    for (const order of allOrders.slice(0, 150)) {
+        const orderId = order.id || order._id;
+        if (!orderId) continue;
+
+        const deliveryRes = apiGet(ENDPOINTS.DELIVERY_STATUS(orderId));
+        if (deliveryRes.status === 200) {
+            try {
+                const deliveryData = JSON.parse(deliveryRes.body);
+                const deliveryStatus = deliveryData.data[0]?.status;
+
+                if (deliveryStatus && (deliveryStatus.toLowerCase() === 'fulfilled' || deliveryStatus.toLowerCase() === 'completed')) {
+                    orderIds.push(orderId);
+                }
+            } catch (e) {
+                // Skip orders with invalid delivery data
+            }
+        }
+
+        if (orderIds.length >= 100) break;
     }
 
     console.log(`Loaded ${menuData?.items?.length || 0} menu items`);
-    console.log(`Found ${orderIds.length} existing orders for tracking`);
+    console.log(`Found ${orderIds.length} orders with fulfilled deliveries for tracking`);
 
     return { startTime: Date.now(), menuData, orderIds };
 }

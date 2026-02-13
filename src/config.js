@@ -133,9 +133,6 @@ export const CUSTOM_THRESHOLDS = {
 
 // API Endpoints Reference (v2)
 export const ENDPOINTS = {
-    // Health
-    HEALTH: '/actuator/health',
-
     // Login/Auth
     LOGIN_OTP: '/login/otp',
     LOGIN_VERIFY: '/login/verify-otp',
@@ -177,7 +174,7 @@ export const ENDPOINTS = {
     // Delivery
     DELIVERY_QUOTE: (restaurantId) => `/delivery/quote/${restaurantId}`,
     DELIVERY_CREATE: (orderId) => `/delivery/create/${orderId}`,
-    DELIVERY_FULFILL: (orderId) => `/delivery/fulfill/${orderId}`,
+    DELIVERY_FULFILL: (orderId) => `/delivery/fulfill/${orderId}?fulfillType=smart`,
     DELIVERY_STATUS: (orderId) => `/delivery?orderId_eq=${orderId}`,
     DELIVERY_CONSUME: (orderId) => `/delivery/consume/${orderId}`,
     DELIVERY_CALLBACK: '/delivery/callback',

@@ -23,19 +23,36 @@ export function getHeaders() {
 
     return headers;
 }
+// Normalize dynamic IDs from URL
+function normalizeEndpoint(endpoint) {
+    return endpoint
+        .replace(/\/\d+/g, '/:id')                // replace numeric IDs
+        .replace(/[0-9a-fA-F-]{24,36}/g, ':uuid') // replace UUIDs
+        .replace(/\?.*$/, '');                    // remove query params
+}
+
+// Generate stable metric name
+function getEndpointName(method, endpoint) {
+    const normalized = normalizeEndpoint(endpoint);
+    return `${method.toLowerCase()}_${normalized}`;
+}
 
 /**
  * Make GET request
  */
 export function apiGet(endpoint, params = {}) {
     const url = `${CONFIG.BASE_URL}${endpoint}`;
+    const name = getEndpointName('GET', endpoint);
+
     const options = {
         headers: getHeaders(),
         timeout: CONFIG.REQUEST_TIMEOUT,
-        tags: params.tags || {},
+        tags: {
+            name: name,
+            ...(params.tags || {}),
+        },
     };
 
-    // Add query parameters if provided
     if (params.query) {
         const queryString = Object.entries(params.query)
             .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
@@ -51,10 +68,15 @@ export function apiGet(endpoint, params = {}) {
  */
 export function apiPost(endpoint, body, params = {}) {
     const url = `${CONFIG.BASE_URL}${endpoint}`;
+    const name = getEndpointName('POST', endpoint);
+
     return http.post(url, JSON.stringify(body), {
         headers: getHeaders(),
         timeout: CONFIG.REQUEST_TIMEOUT,
-        tags: params.tags || {},
+        tags: {
+            name: name,
+            ...(params.tags || {}),
+        },
     });
 }
 
@@ -63,10 +85,15 @@ export function apiPost(endpoint, body, params = {}) {
  */
 export function apiPatch(endpoint, body, params = {}) {
     const url = `${CONFIG.BASE_URL}${endpoint}`;
+    const name = getEndpointName('PATCH', endpoint);
+
     return http.patch(url, JSON.stringify(body), {
         headers: getHeaders(),
         timeout: CONFIG.REQUEST_TIMEOUT,
-        tags: params.tags || {},
+        tags: {
+            name: name,
+            ...(params.tags || {}),
+        },
     });
 }
 
@@ -75,13 +102,17 @@ export function apiPatch(endpoint, body, params = {}) {
  */
 export function apiDelete(endpoint, params = {}) {
     const url = `${CONFIG.BASE_URL}${endpoint}`;
+    const name = getEndpointName('DELETE', endpoint);
+
     return http.del(url, null, {
         headers: getHeaders(),
         timeout: CONFIG.REQUEST_TIMEOUT,
-        tags: params.tags || {},
+        tags: {
+            name: name,
+            ...(params.tags || {}),
+        },
     });
 }
-
 /**
  * Standard response check
  */

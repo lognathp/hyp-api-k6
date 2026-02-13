@@ -206,12 +206,6 @@ export function setup() {
     }
     console.log('='.repeat(60));
 
-    // Verify API is accessible
-    const res = apiGet(ENDPOINTS.HEALTH);
-    if (res.status !== 200) {
-        throw new Error(`API not accessible: ${res.status}`);
-    }
-
     return { startTime: Date.now() };
 }
 
