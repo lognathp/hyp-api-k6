@@ -28,6 +28,7 @@ import {
     ORDER_LIFECYCLE,
     DELIVERY_STATUS_SEQUENCE,
     fetchMenuData,
+    fetchRestaurantLocation,
     generateDynamicOrderDto,
     generateOrderDto,
 } from '../data/test-data.js';
@@ -54,9 +55,9 @@ export default function (data) {
     const restaurantId = CONFIG.RESTAURANT_ID;
     const customerId = CONFIG.CUSTOMER_ID;
     const menuData = data?.menuData;
+    const menuSharingCode = data?.menuSharingCode;
 
     let orderId = null;
-    let menuSharingCode = null;
     let paymentOrderId = null;
     let deliveryId = null;
 
@@ -99,11 +100,10 @@ export default function (data) {
             try {
                 const body = JSON.parse(res.body);
                 orderId = body.data?.[0]?.id || body.data?.id;
-                menuSharingCode = body.data?.[0]?.menuSharingCode || body.data?.menuSharingCode;
             } catch (e) {
                 orderId = extractId(res);
             }
-            console.log(`   ✅ Order created, Order ID: ${orderId}, Menu Code: ${menuSharingCode}`);
+            console.log(`   Order created, Order ID: ${orderId}`);
         } else {
             console.log(`   ❌ Order creation failed: ${res.status}`);
             try {
@@ -245,11 +245,31 @@ export default function (data) {
     // ========================================
     group('Step 6: Delivery Callbacks', function () {
         const start = Date.now();
-        console.log('🚚 Step 6: Processing delivery callbacks...');
+        console.log('Step 6: Processing delivery callbacks...');
 
-        // Generate consistent IDs for all callbacks
-        deliveryId = `${Date.now()}${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-        const channelOrderId = Math.floor(100000 + Math.random() * 900000); // e.g., 114916
+        // Fetch delivery record to get the real deliveryOrderId
+        const deliveryRes = apiGet(ENDPOINTS.DELIVERY_STATUS(orderId));
+        let channelOrderId = null;
+
+        if (deliveryRes.status === 200) {
+            try {
+                const deliveryData = JSON.parse(deliveryRes.body);
+                const delivery = deliveryData.data?.[0] || deliveryData.data;
+                deliveryId = delivery?.deliveryOrderId || delivery?.deliveryOrderId;
+                channelOrderId = delivery?.fulfillment?.channel?.order_id;
+            } catch (e) {
+                console.warn(`Failed to parse delivery record: ${e.message}`);
+            }
+        }
+
+        if (!deliveryId) {
+            console.warn(`No delivery record found for order ${orderId}, skipping delivery callbacks`);
+            stepSuccess.add(0);
+            stepDuration.add(Date.now() - start);
+            return;
+        }
+
+        channelOrderId = channelOrderId || String(Math.floor(100000 + Math.random() * 900000));
 
         let logs = [];
         let allSuccess = true;
@@ -264,8 +284,8 @@ export default function (data) {
             'DELIVERED': 22,
         };
 
-        console.log('   📍 Delivery status sequence:');
-        console.log(`   Delivery ID: ${deliveryId}`);
+        console.log('   Delivery status sequence:');
+        console.log(`   Delivery Order ID: ${deliveryId}`);
         console.log(`   Channel Order ID: ${channelOrderId}`);
 
         for (const status of DELIVERY_STATUS_SEQUENCE) {
@@ -279,16 +299,14 @@ export default function (data) {
                 baseTime,
                 minutesOffset
             );
-
             const res = apiPost(ENDPOINTS.DELIVERY_CALLBACK, payload);
             const statusOk = check(res, { [`Delivery ${status}`]: (r) => r.status === 200 });
 
             if (statusOk) {
-                console.log(`      → ${status} ✓ (+${minutesOffset}min)`);
-                // Accumulate logs for next callback
+                console.log(`      ${status} OK (+${minutesOffset}min)`);
                 logs = updatedLogs;
             } else {
-                console.log(`      → ${status} ✗ (${res.status})`);
+                console.log(`      ${status} FAILED (${res.status})`);
                 try {
                     console.log(`        Response: ${res.body.substring(0, 150)}`);
                 } catch (e) {}
@@ -339,7 +357,7 @@ export default function (data) {
     console.log(`Order ID: ${orderId}`);
     console.log(`Menu Sharing Code: ${menuSharingCode}`);
     console.log(`Payment Order ID: ${paymentOrderId}`);
-    console.log(`Delivery ID: ${deliveryId}`);
+    console.log(`Delivery Order ID: ${deliveryId}`);
     console.log('='.repeat(60) + '\n');
 }
 
@@ -360,6 +378,17 @@ export function setup() {
         throw new Error('CUSTOMER_ID is required! Set in configs/.env');
     }
 
+    // Fetch restaurant data (menuSharingCode)
+    console.log('Fetching restaurant data...');
+    const restaurantData = fetchRestaurantLocation(CONFIG.RESTAURANT_ID);
+    const menuSharingCode = restaurantData?.menuSharingCode || null;
+
+    if (menuSharingCode) {
+        console.log(`Menu sharing code: ${menuSharingCode}`);
+    } else {
+        console.warn('Could not fetch menuSharingCode from restaurant API');
+    }
+
     // Fetch menu data
     console.log('Fetching menu data...');
     const menuData = fetchMenuData(CONFIG.RESTAURANT_ID);
@@ -372,10 +401,10 @@ export function setup() {
 
     console.log('');
     console.log('Flow: CREATE ORDER → CREATE PAYMENT → VERIFY PAYMENT');
-    console.log('      → POS ACCEPTED → READY_FOR_DELIVERY → DELIVERY CALLBACKS → DELIVERED');
+    console.log('      → POS ACCEPTED → DELIVERY CALLBACKS → DELIVERED');
     console.log('='.repeat(60) + '\n');
 
-    return { startTime: Date.now(), menuData };
+    return { startTime: Date.now(), menuData, menuSharingCode };
 }
 
 export function teardown(data) {

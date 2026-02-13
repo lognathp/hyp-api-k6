@@ -10,10 +10,11 @@
  * 4. Create Order
  * 5. Create Payment
  * 6. Verify Payment
- * 7. POS Callback (ACCEPTED)
- * 8. POS Callback (READY_FOR_DELIVERY)
- * 9. Delivery Callbacks: CREATED → OUT_FOR_PICKUP → PICKED_UP → OUT_FOR_DELIVERY → DELIVERED
- * 10. User Tracking (verify delivered)
+ * 7. Verify PAID status (5s wait)
+ * 8. POS Callback (ACCEPTED)
+ * 9. Fulfill Delivery (5s wait)
+ * 10. Delivery Callbacks: CREATED → OUT_FOR_PICKUP → PICKED_UP → OUT_FOR_DELIVERY → DELIVERED
+ * 11. User Tracking (verify delivered)
  *
  * Modes:
  * - sanity: Single user, single order (~5 min) - for script validation
@@ -132,13 +133,13 @@ export default function (data) {
     const restaurantId = CONFIG.RESTAURANT_ID;
     const menuData = data?.menuData;
     const restaurantLocation = data?.restaurantLocation;
+    const menuSharingCode = data?.menuSharingCode;
     const user = getUserFromPool(userPool, __VU);
 
     const lifecycleStart = Date.now();
     let lifecycleSuccess = false;
     let customerId = null;
     let orderId = null;
-    let menuSharingCode = null;
     let paymentOrderId = null;
 
     // ========================================
@@ -213,7 +214,7 @@ export default function (data) {
     let addressId = null;
     group('Phase 3: Address & Delivery Quote', function () {
         // Fetch customer addresses (200 = has addresses, 404 = no addresses - both are valid)
-        let res = apiGet(`${ENDPOINTS.ADDRESS_LIST}?customerId=${customerId}`);
+        let res = apiGet(`${ENDPOINTS.ADDRESS_LIST}?customerId_eq=${customerId}`);
         check(res, { 'Address API responded': (r) => r.status === 200 || r.status === 404 });
 
         // Parse addresses and get first available address (if any exist)
@@ -288,7 +289,6 @@ export default function (data) {
             try {
                 const body = JSON.parse(res.body);
                 orderId = body.data?.[0]?.id || body.data?.id;
-                menuSharingCode = body.data?.[0]?.menuSharingCode || body.data?.menuSharingCode;
             } catch (e) {
                 orderId = extractId(res);
             }
@@ -350,12 +350,32 @@ export default function (data) {
         paymentTime.add(Date.now() - start);
     });
 
+    // Wait for payment to be processed
+    sleep(5);
+
+    // ========================================
+    // PHASE 7: VERIFY PAID STATUS
+    // ========================================
+    group('Phase 7: Verify Paid', function () {
+        const res = apiGet(ENDPOINTS.ORDER_GET(orderId));
+        check(res, {
+            'Order fetched': (r) => r.status === 200,
+            'Status is PAID': (r) => {
+                try {
+                    const body = JSON.parse(r.body);
+                    const status = body.data?.[0]?.status || body.data?.status;
+                    return status === 'PAID';
+                } catch (e) { return false; }
+            },
+        });
+    });
+
     sleep(randomSleep(200, 400));
 
     // ========================================
-    // PHASE 7: POS CALLBACK (ACCEPTED)
+    // PHASE 8: POS CALLBACK (ACCEPTED)
     // ========================================
-    group('Phase 7: POS Accept', function () {
+    group('Phase 8: POS Accept', function () {
         const start = Date.now();
 
         const updatePayload = generateOrderStatusUpdate(menuSharingCode, orderId, ORDER_LIFECYCLE.ACCEPTED);
@@ -366,33 +386,54 @@ export default function (data) {
         posTime.add(Date.now() - start);
     });
 
-    sleep(randomSleep(200, 400));
+    // Wait for order to be accepted before fulfilling delivery
+    sleep(5);
 
     // ========================================
-    // PHASE 8: POS CALLBACK (READY_FOR_DELIVERY)
+    // PHASE 9: FULFILL DELIVERY
     // ========================================
-    group('Phase 8: Ready for Delivery', function () {
+    group('Phase 9: Fulfill Delivery', function () {
         const start = Date.now();
 
-        const updatePayload = generateOrderStatusUpdate(menuSharingCode, orderId, ORDER_LIFECYCLE.READY_FOR_DELIVERY);
-        const res = apiPost(ENDPOINTS.POS_ORDER_UPDATE, updatePayload);
-
-        const success = check(res, { 'Order ready for delivery': (r) => r.status === 200 });
-        posSuccessRate.add(success ? 1 : 0);
-        posTime.add(Date.now() - start);
+        const res = apiPost(ENDPOINTS.DELIVERY_FULFILL(orderId), {});
+        const success = check(res, { 'Delivery fulfilled': (r) => r.status === 200 });
+        deliverySuccessRate.add(success ? 1 : 0);
+        deliveryTime.add(Date.now() - start);
     });
 
     sleep(randomSleep(200, 400));
 
     // ========================================
-    // PHASE 9: DELIVERY CALLBACKS
+    // PHASE 10: DELIVERY CALLBACKS
     // ========================================
-    group('Phase 9: Delivery Callbacks', function () {
+    group('Phase 10: Delivery Callbacks', function () {
         const start = Date.now();
 
-        // Generate consistent IDs for all callbacks
-        const deliveryId = `${Date.now()}${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-        const channelOrderId = Math.floor(100000 + Math.random() * 900000);
+        // Fetch delivery record to get the real deliveryOrderId
+        const deliveryRes = apiGet(ENDPOINTS.DELIVERY_STATUS(orderId));
+        let deliveryOrderId = null;
+        let channelOrderId = null;
+
+        if (deliveryRes.status === 200) {
+            try {
+                const deliveryData = JSON.parse(deliveryRes.body);
+                const delivery = deliveryData.data?.[0] || deliveryData.data;
+                deliveryOrderId = delivery?.id || delivery?._id;
+                channelOrderId = delivery?.fulfillment?.channel?.order_id;
+            } catch (e) {
+                console.warn(`Failed to parse delivery record: ${e.message}`);
+            }
+        }
+
+        if (!deliveryOrderId) {
+            console.warn(`No delivery record found for order ${orderId}, skipping delivery callbacks`);
+            deliverySuccessRate.add(0);
+            deliveryTime.add(Date.now() - start);
+            return;
+        }
+
+        // Use fetched channelOrderId or generate fallback
+        channelOrderId = channelOrderId || String(Math.floor(100000 + Math.random() * 900000));
 
         let logs = [];
         let allSuccess = true;
@@ -411,7 +452,7 @@ export default function (data) {
             const minutesOffset = statusTimeOffsets[status] || 0;
             const { payload, logs: updatedLogs } = generateDeliveryCallback(
                 orderId,
-                deliveryId,
+                deliveryOrderId,
                 channelOrderId,
                 status,
                 logs,
@@ -437,9 +478,9 @@ export default function (data) {
     sleep(randomSleep(200, 400));
 
     // ========================================
-    // PHASE 10: USER TRACKING
+    // PHASE 11: USER TRACKING
     // ========================================
-    group('Phase 10: User Tracking', function () {
+    group('Phase 11: User Tracking', function () {
         const start = Date.now();
 
         // User checks order status
@@ -492,25 +533,32 @@ export function setup() {
     console.log('');
     console.log('Flow:');
     console.log('  1. Browse Menu → 2. Login → 3. Address & Quote → 4. Create Order');
-    console.log('  5. Create Payment → 6. Verify Payment');
-    console.log('  7. POS ACCEPTED → 8. READY_FOR_DELIVERY');
-    console.log('  9. Delivery Callbacks (CREATED → OUT_FOR_PICKUP → PICKED_UP → OUT_FOR_DELIVERY → DELIVERED)');
-    console.log('  10. User Tracking');
+    console.log('  5. Create Payment → 6. Verify Payment → 7. Verify PAID');
+    console.log('  8. POS ACCEPTED → 9. Fulfill Delivery');
+    console.log('  10. Delivery Callbacks (CREATED → OUT_FOR_PICKUP → PICKED_UP → OUT_FOR_DELIVERY → DELIVERED)');
+    console.log('  11. User Tracking');
     console.log('='.repeat(70));
 
     if (!CONFIG.RESTAURANT_ID) {
         throw new Error('RESTAURANT_ID is required!');
     }
 
-    // Fetch restaurant location for address creation
-    console.log('\nFetching restaurant location...');
+    // Fetch restaurant data (location + menuSharingCode)
+    console.log('\nFetching restaurant data...');
     const restaurantData = fetchRestaurantLocation(CONFIG.RESTAURANT_ID);
     const restaurantLocation = restaurantData?.location || null;
+    const menuSharingCode = restaurantData?.menuSharingCode || null;
 
     if (restaurantLocation) {
         console.log(`Restaurant location: lat=${restaurantLocation.latitude}, lng=${restaurantLocation.longitude}`);
     } else {
         console.warn('Could not fetch restaurant location, will use fallback');
+    }
+
+    if (menuSharingCode) {
+        console.log(`Menu sharing code: ${menuSharingCode}`);
+    } else {
+        console.warn('Could not fetch menuSharingCode from restaurant API');
     }
 
     // Fetch menu data
@@ -521,7 +569,7 @@ export function setup() {
         console.log(`Loaded ${menuData.items?.length || 0} items`);
     }
 
-    return { startTime: Date.now(), menuData, restaurantLocation };
+    return { startTime: Date.now(), menuData, restaurantLocation, menuSharingCode };
 }
 
 export function teardown(data) {

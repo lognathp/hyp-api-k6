@@ -63,6 +63,7 @@ export function fetchRestaurantLocation(restaurantId) {
             id: restaurant.id || restaurant._id,
             name: restaurant.name || restaurant.restaurantName,
             location: location,
+            menuSharingCode: restaurant.menuSharingCode,
         };
     } catch (e) {
         console.error(`Failed to parse restaurant data: ${e.message}`);
@@ -183,7 +184,7 @@ function parseMenuData(categories) {
  * Fetch customer addresses
  */
 export function fetchCustomerAddresses(customerId) {
-    const url = `${CONFIG.BASE_URL}/address?customerId=${customerId}`;
+    const url = `${CONFIG.BASE_URL}/address?customerId_eq=${customerId}`;
     const headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',

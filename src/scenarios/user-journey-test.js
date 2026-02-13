@@ -181,7 +181,7 @@ export default function (data) {
         const start = Date.now();
 
         // Fetch customer addresses (200 = has addresses, 404 = no addresses - both are valid)
-        let res = apiGet(`${ENDPOINTS.ADDRESS_LIST}?customerId=${customerId}`);
+        let res = apiGet(`${ENDPOINTS.ADDRESS_LIST}?customerId_eq=${customerId}`);
         check(res, { 'Address API responded': (r) => r.status === 200 || r.status === 404 });
 
         // Parse addresses and get first available address (if any exist)

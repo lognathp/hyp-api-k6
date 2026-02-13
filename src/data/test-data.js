@@ -440,13 +440,21 @@ const STATUS_REMARKS = {
 };
 
 /**
- * Generate DeliveryOrderData for delivery callback
- * Matches the exact Pidge captive delivery callback payload structure
+ * Generate DeliveryOrderStatus payload for delivery callback
+ * Matches the Pidge delivery callback schema: { data: DeliveryOrderData }
  *
- * @param {string} orderId - The order ID (reference_id in payload)
- * @param {string} deliveryOrderId - The delivery order ID created by backend (id in payload)
+ * The deliveryOrderId must be fetched from the API:
+ *   GET /delivery?orderId_eq={orderId}
+ *
+ * Status mapping:
+ *   - DeliveryOrderData.status = 'fulfilled' for all fulfillment statuses
+ *   - DeliveryOrderData.status = 'completed' when fulfillment status is DELIVERED
+ *   - DeliveryFulfillment.status = current status from sequence
+ *
+ * @param {string} orderId - The order ID (used as reference_id)
+ * @param {string} deliveryOrderId - The delivery order ID fetched from API (data.id)
  * @param {string} channelOrderId - The channel's order ID (fulfillment.channel.order_id)
- * @param {string} fulfillmentStatus - Current delivery status
+ * @param {string} fulfillmentStatus - Current delivery fulfillment status
  * @param {Array} previousLogs - Accumulated logs from previous callbacks
  * @param {Date} baseTime - Base timestamp for the order
  * @param {number} minutesOffset - Minutes offset from base time for this status
@@ -456,8 +464,8 @@ export function generateDeliveryCallback(orderId, deliveryOrderId, channelOrderI
     const currentTime = new Date(base.getTime() + minutesOffset * 60 * 1000);
     const timestamp = currentTime.toISOString();
 
-    // Determine overall status based on fulfillment status
-    const status = fulfillmentStatus === 'DELIVERED' ? 'completed' : 'fulfilled';
+    // DeliveryOrderData.status: 'fulfilled' for all, 'completed' at DELIVERED
+    const orderStatus = fulfillmentStatus === 'DELIVERED' ? 'completed' : 'fulfilled';
 
     // Location coordinates
     const location = {
@@ -521,63 +529,65 @@ export function generateDeliveryCallback(orderId, deliveryOrderId, channelOrderI
         drop.timestamp = timestamp;
     }
 
-    const payload = {
-        id: String(deliveryOrderId),
-        dd_channel: {
-            name: 'Hyperapps Testing',
-            order_id: String(orderId),
-            user: { id: 853, type: 4 },
-            source: { id: 1 },
+    // Build fulfillment object
+    const fulfillment = {
+        channel: channel,
+        logs: logs,
+        status: fulfillmentStatus,
+        pickup: pickup,
+        drop: drop,
+        mtg: {
+            trip_id: 529719,
+            group_id: 204359,
+            rider_id: 306,
+            bundle_id: 142707,
+            sequence_number: 1,
         },
-        reference_id: String(orderId),
-        bill_amount: 637.9,
-        cod_amount: 0,
-        created_at: new Date(base.getTime() + 1 * 60 * 1000).toISOString(),
-        customer_detail: {
-            name: 'John Doe',
-            mobile: '1234567890',
-        },
-        sender_detail: {
-            name: 'Hyperapps Demo',
-            mobile: '1234567890',
-        },
-        poc_detail: {
-            name: 'Hyperapps',
-            mobile: '8754556606',
-        },
-        status: status,
-        updated_at: timestamp,
-        notes: [],
-        pickup_drop_distance: 0,
-        fulfillment: {
-            channel: channel,
-            logs: logs,
-            status: fulfillmentStatus,
-            pickup: pickup,
-            rider: fulfillmentStatus !== 'CREATED' ? rider : undefined,
-            drop: drop,
-            mtg: {
-                trip_id: 529719,
-                group_id: 204359,
-                rider_id: 306,
-                bundle_id: 142707,
-                sequence_number: 1,
-            },
-            track_code: 'rk3vx7',
-            delivery_charge: 189,
-        },
-        owner: {
-            id: 815,
-            type: 4,
-            name: 'Test Pidge R',
-        },
-        parent_id: null,
+        track_code: 'rk3vx7',
+        delivery_charge: 189,
     };
 
-    // Remove undefined rider for CREATED status
-    if (fulfillmentStatus === 'CREATED') {
-        delete payload.fulfillment.rider;
+    // Add rider for non-CREATED statuses
+    if (fulfillmentStatus !== 'CREATED') {
+        fulfillment.rider = rider;
     }
+
+    // Wrap in { data: DeliveryOrderData } per schema
+    const payload = {
+        id: String(deliveryOrderId),
+            dd_channel: {
+                name: 'Hyperapps Testing',
+                order_id: String(orderId),
+                user: { id: 853, type: 4 },
+            },
+            reference_id: String(orderId),
+            bill_amount: 637,
+            cod_amount: 0,
+            created_at: new Date(base.getTime() + 1 * 60 * 1000).toISOString(),
+            customer_detail: {
+                name: 'John Doe',
+                mobile: '1234567890',
+            },
+            sender_detail: {
+                name: 'Hyperapps Demo',
+                mobile: '1234567890',
+            },
+            poc_detail: {
+                name: 'Hyperapps',
+                mobile: '8754556606',
+            },
+            status: orderStatus,
+            updated_at: timestamp,
+            notes: [],
+            fulfillment: fulfillment,
+            owner: {
+                id: 815,
+                type: 4,
+                name: 'Test Pidge R',
+            },
+            parent_id: null,
+            fulfillment_histories: [],
+    };
 
     return { payload, logs };
 }
